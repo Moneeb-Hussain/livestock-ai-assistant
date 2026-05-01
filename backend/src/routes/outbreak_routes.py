@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from backend.src.services.outbreak_service import save_outbreak_report, check_and_create_alert
+from backend.src.services.outbreak_service import save_outbreak_report
 
 router = APIRouter()
+
 
 class OutbreakReportRequest(BaseModel):
     animal_type: str
@@ -15,22 +16,15 @@ class OutbreakReportRequest(BaseModel):
     longitude: Optional[float] = None
     language: Optional[str] = "english"
 
+
 @router.post("/api/outbreaks")
 def report_outbreak(data: OutbreakReportRequest):
     try:
-        saved = save_outbreak_report(data.model_dump())
-        alert_status = check_and_create_alert(
-            data.animal_type,
-            data.symptom_group,
-            data.location_name or ""
-        )
-        return {
-            "success": True,
-            "report": saved,
-            "alert_status": alert_status
-        }
+        result = save_outbreak_report(data.model_dump())
+        return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/api/outbreaks")
 def get_alerts():

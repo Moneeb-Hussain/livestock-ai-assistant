@@ -1,8 +1,41 @@
-# MaweshiAI Backend
+# MaweshiAI
 
-MaweshiAI is a FastAPI-based livestock health assistant backend that helps farmers describe animal health problems and receive structured AI guidance. It uses Groq for text-based livestock health reasoning and optionally uses Gemini for image observation when an animal image is uploaded.
+MaweshiAI helps farmers describe animal health problems and receive structured AI guidance. The **backend** (FastAPI under `backend/`) uses Groq for text-based livestock health reasoning and optionally Gemini for image observation when an animal image is uploaded. The **frontend** (Next.js under `frontend/`) provides chat, cases, treatment plans, and related UI.
 
 MaweshiAI is designed for livestock such as goats, cows, buffaloes, sheep, camels, calves, lambs, and similar farm animals. It provides cautious, farmer-friendly guidance and does **not** replace a qualified veterinarian.
+
+## Repository layout
+
+| Path | Role |
+|------|------|
+| `frontend/` | Next.js (App Router) + Tailwind: chat, treatment plan, outbreak alerts, case UI, `src/lib/api` clients |
+| `backend/` | FastAPI app: `/api/chat`, `/api/cases`, `/api/outbreaks`, optional `/api/vets` |
+| `ai-services/` | Text / vision / audio pipelines (prompts, model clients)—integrate with or call from backend |
+| `db/` | Supabase/PostgreSQL migrations and seeds (`outbreak_reports`, `outbreak_alerts`, etc.) |
+
+## Target stack (MVP)
+
+- **Frontend:** Next.js, Tailwind CSS, `fetch`-based API modules under `src/lib/api`
+- **Backend:** Python FastAPI
+- **Database:** Supabase PostgreSQL
+- **AI:** Hugging Face Inference (text/vision); browser or server speech as needed
+- **Maps:** Browser geolocation + OpenStreetMap / Nominatim / Overpass (vet search); optional **Leaflet** + free tile/OSM for map UI
+
+## Backend source layout
+
+- `backend/src/routes/` — HTTP route modules
+- `backend/src/services/` — business logic (cases, outbreaks, AI orchestration)
+- `backend/src/validators/` — request/response validation
+- `backend/src/db/models/` — data models / DB access helpers
+- `backend/src/utils/` — safety, response shaping, helpers
+
+The application entrypoint (for example `main.py`) lives under `backend/src/`.
+
+## Frontend (Next.js)
+
+Next.js **requires Node.js ≥ 18.17** (recommended: **20.x**). If `next dev` exits with a Node version error, upgrade Node (for example with [nvm](https://github.com/nvm-sh/nvm): `cd frontend && nvm install && nvm use`, then `npm install && npm run dev`).
+
+Architecture reference: [Maweshi AI App architecture](https://docs.google.com/document/d/1DQssetF3gWAMZX3xntW3tD0Y7nIHcaf9WvqzRqlI4y4/edit).
 
 ---
 

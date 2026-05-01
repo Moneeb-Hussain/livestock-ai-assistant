@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 !.env.local.example
+!**/.env.example
 
 # Python
 __pycache__/
@@ -19,6 +20,7 @@ venv/
 node_modules/
 dist/
 build/
+.next/
 *.local
 
 # IDE / OS

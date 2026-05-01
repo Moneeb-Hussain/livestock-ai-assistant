@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from backend.src.services.outbreak_service import save_outbreak_report
+from backend.src.db.connection import supabase
 
 router = APIRouter()
 
@@ -29,7 +30,6 @@ def report_outbreak(data: OutbreakReportRequest):
 @router.get("/api/outbreaks")
 def get_alerts():
     try:
-        from backend.src.db.connection import supabase
         result = supabase.table("outbreak_alerts") \
             .select("*") \
             .order("created_at", desc=True) \

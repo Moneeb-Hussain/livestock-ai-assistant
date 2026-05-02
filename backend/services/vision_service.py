@@ -1,226 +1,297 @@
 import os
 import requests
 import base64
+import json
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY is missing. Please add it to your .env file.")
 
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+API_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+)
+
+ALLOWED_TYPES = ["image/jpeg", "image/png", "image/jpg", "image/webp"]
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
+ALLOWED_WARNINGS = {
+    "Low confidence — interpret cautiously",
+    "Poor image quality",
+    "Partial visibility of animal",
+}
+
+PROMPT = """
+You are a strict veterinary vision system.
+
+Return ONLY valid JSON:
+
+{
+  "isAnimalPresent": true/false,
+  "visibleSymptoms": ["..."],
+  "confidence": 0.0-1.0,
+  "imageSummary": "...",
+  "warning": null or "..."
+}
+
+STRICT RULES:
+
+1. isAnimalPresent
+   - true ONLY if a real animal body (head, limbs, torso, or clear body part) is visible
+   - false if image contains objects, humans only, drawings, or unclear shapes
+
+2. visibleSymptoms
+   - Include ONLY directly observable physical features
+   - Allowed: color changes, swelling, wounds, scabs, lesions, discharge, posture, hair loss
+   - NOT allowed: infection, disease, parasite, virus, syndrome
+   - Do NOT infer anatomy beyond what is visually obvious
+     (e.g., say "udder area" instead of specific anatomical terms if unsure)
+   - Do NOT interpret causes or severity
+   - Prefer simple visual phrases:
+     e.g., "red patches", "raised bumps", "hair loss", "dark crust"
+   - If no symptoms visible → []
+   - If no animal → null
+
+3. confidence
+   - Reflect visual certainty ONLY (not medical certainty)
+   - Scale:
+       0.0 → no useful information
+       0.3 → very unclear / poor visibility
+       0.5 → moderate clarity
+       0.7 → clear visible features
+       0.8 → very clear and unambiguous
+   - HARD LIMIT: never exceed 0.85
+   - If partial visibility OR cropped/multi-panel image → MUST be ≤ 0.75
+   - If multiple scenes or mixed subjects → reduce confidence
+
+4. imageSummary
+   - MUST be 2–4 complete sentences (minimum 30 words)
+   - MUST describe ONLY visible physical details
+   - MUST NOT include diagnosis, interpretation, or assumptions
+   - MUST NOT include meta phrases like:
+       "this image shows", "depicts", "appears to be"
+   - MUST be grammatically complete (no truncation)
+   - Avoid vague words like "condition", "issue", "abnormal"
+   - If multiple panels or regions exist → describe each briefly and separately
+   - Mention if human hands or non-animal elements are present
+
+5. warning
+   - Use ONLY one of:
+       "Low confidence — interpret cautiously"
+       "Poor image quality"
+       "Partial visibility of animal"
+       null
+   - If confidence < 0.4 → MUST use low confidence warning
+   - If image is cropped, multi-panel, or incomplete → use "Partial visibility of animal"
+   - If image is blurry → use "Poor image quality"
+
+GLOBAL RULES:
+- Do NOT hallucinate
+- Do NOT guess
+- Do NOT interpret
+- Do NOT output anything except valid JSON
+- Ensure JSON is complete and valid before returning
+"""
+
+# -------------------------------
+# Extract first valid JSON object
+# -------------------------------
+def extract_json(text: str) -> str | None:
+    """
+    Scans for the first valid JSON object using Python's own decoder.
+    Immune to: nested braces, multiple JSON blocks, trailing text, markdown fences.
+    """
+    decoder = json.JSONDecoder()
+    text = text.strip()
+
+    for i, char in enumerate(text):
+        if char == "{":
+            try:
+                obj, _ = decoder.raw_decode(text, i)
+                return json.dumps(obj)
+            except json.JSONDecodeError:
+                continue
+
+    return None
 
 
 # -------------------------------
-# 🔹 Symptom Extraction
+# Validate image before sending
 # -------------------------------
-def extract_symptoms(text: str):
-    if not text:
-        return []
-
-    text = text.lower()
-    symptoms = []
-
-    # Image + general keywords
-    if any(w in text for w in ["lesion", "wound", "raw", "inflamed"]):
-        symptoms.append("skin lesions")
-
-    if any(w in text for w in ["hair loss", "alopecia"]):
-        symptoms.append("hair loss")
-
-    if any(w in text for w in ["peeling", "sloughing"]):
-        symptoms.append("skin peeling")
-
-    if any(w in text for w in ["crust", "thickened"]):
-        symptoms.append("skin thickening")
-
-    if any(w in text for w in ["infection", "infected"]):
-        symptoms.append("possible infection")
-
-    if any(w in text for w in ["distress", "weak", "sick"]):
-        symptoms.append("general weakness")
-
-    if any(w in text for w in ["mouth", "tongue", "blister"]):
-        symptoms.append("mouth issue")
-
-    if "eye" in text:
-        symptoms.append("eye infection")
-
-    if any(w in text for w in ["limp", "leg", "unable to walk"]):
-        symptoms.append("limping")
-
-    # 🔥 USER-REPORTED ONLY (non-visible)
-    if "fever" in text:
-        symptoms.append("fever")
-
-    if any(w in text for w in ["not eating", "loss of appetite"]):
-        symptoms.append("not eating")
-
-    if "skin" in text:
-        symptoms.append("skin issue")
-
-    return list(set(symptoms))
+def validate_image(image_bytes: bytes, mime_type: str) -> str | None:
+    if not image_bytes:
+        return "Empty file"
+    if mime_type not in ALLOWED_TYPES:
+        return f"Unsupported file type: {mime_type}"
+    if len(image_bytes) > MAX_IMAGE_SIZE:
+        return "File too large (max 5MB allowed)"
+    return None
 
 
 # -------------------------------
-# 🔹 Severity (for combined reasoning)
+# Main function
 # -------------------------------
-def classify_severity(symptoms):
-    if len(symptoms) >= 4:
-        return "high"
-    elif len(symptoms) >= 2:
-        return "moderate"
-    else:
-        return "low"
-
-
-# -------------------------------
-# 🔹 Condition Suggestions
-# -------------------------------
-def suggest_conditions(symptoms):
-    conditions = []
-
-    if "mouth issue" in symptoms and "possible infection" in symptoms:
-        conditions.append("Foot and Mouth Disease (FMD) risk")
-
-    if "skin lesions" in symptoms and "hair loss" in symptoms:
-        conditions.append("Mange or skin infection")
-
-    if "skin peeling" in symptoms:
-        conditions.append("Severe dermatological condition")
-
-    if "fever" in symptoms:
-        conditions.append("Possible infection or systemic illness")
-
-    if not conditions:
-        conditions.append("General health issue - further assessment needed")
-
-    return conditions
-
-
-# -------------------------------
-# 🔹 Recommended Actions
-# -------------------------------
-def suggest_actions(severity, symptoms):
-    actions = []
-
-    if severity == "high":
-        actions.append("Isolate the animal immediately")
-        actions.append("Contact a veterinarian urgently")
-
-    if "skin lesions" in symptoms:
-        actions.append("Keep affected area clean and dry")
-
-    if "possible infection" in symptoms:
-        actions.append("Monitor for infection worsening")
-
-    if "mouth issue" in symptoms:
-        actions.append("Provide soft food and clean water")
-
-    if "fever" in symptoms:
-        actions.append("Monitor temperature and keep animal hydrated")
-
-    if not actions:
-        actions.append("Monitor the animal and consult a vet if condition worsens")
-
-    return actions
-
-
-# -------------------------------
-# 🔹 Main Function
-# -------------------------------
-def analyze_image(image_bytes: bytes, user_text: str = None):
+def analyze_image(image_bytes: bytes, mime_type: str = "image/png") -> dict:
     try:
+        # Normalize mime_type — handle None or non-string input
+        if not isinstance(mime_type, str) or not mime_type:
+            mime_type = "image/png"
+
+        # Guard: API key
         if not GEMINI_API_KEY:
             return {
-                "visibleSymptoms": [],
-                "reportedSymptoms": [],
-                "confidence": 0.1,
-                "imageSummary": "Missing API key",
-                "warning": "GEMINI_API_KEY not set"
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "Server configuration error — API key is missing.",
+                "warning": "Missing API key",
             }
 
-        # Convert image → base64
+        # Guard: image validation — invalid mime or size returns early with user feedback
+        error = validate_image(image_bytes, mime_type)
+        if error:
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": f"Image rejected during validation: {error}.",
+                "warning": error,
+            }
+
         img_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
         payload = {
             "contents": [
                 {
                     "parts": [
-                        {
-                            "text": f"""
-Analyze this animal image.
-
-User-described symptoms: {user_text if user_text else "No symptoms provided"}
-
-Focus ONLY on visible signs from the image.
-Do not assume diseases.
-"""
-                        },
-                        {
-                            "inlineData": {
-                                "mimeType": "image/png",
-                                "data": img_base64
-                            }
-                        }
+                        {"text": PROMPT},
+                        {"inlineData": {"mimeType": mime_type, "data": img_base64}},
                     ]
                 }
             ]
         }
 
-        response = requests.post(API_URL, json=payload, timeout=30)
+        # Call Gemini with 2 attempts — only 200 sets response, timeouts retry cleanly
+        response = None
+        for _ in range(2):
+            try:
+                r = requests.post(API_URL, json=payload, timeout=20)
+                if r.status_code == 200:
+                    response = r
+                    break
+            except requests.exceptions.Timeout:
+                continue
 
-        if response.status_code != 200:
+        if not response:
             return {
-                "visibleSymptoms": [],
-                "reportedSymptoms": [],
-                "confidence": 0.2,
-                "imageSummary": "Vision model failed",
-                "warning": "External API error"
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "Vision model failed to respond after retry attempts.",
+                "warning": "External API error",
             }
 
+        # Parse Gemini response
         result = response.json()
-        caption = result["candidates"][0]["content"]["parts"][0]["text"]
+        try:
+            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "Unexpected response structure from vision model.",
+                "warning": "Malformed API response",
+            }
 
-        # -------------------------------
-        # 🔹 Separate extraction
-        # -------------------------------
-        image_symptoms = extract_symptoms(caption)
-        reported_symptoms = extract_symptoms(user_text)
+        # Extract JSON from raw text
+        clean_json = extract_json(raw_text)
+        if not clean_json:
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "Model returned output containing no valid JSON block.",
+                "warning": "No JSON returned",
+            }
 
-        # 🔹 Combined ONLY for reasoning
-        combined_symptoms = list(set(image_symptoms + reported_symptoms))
+        try:
+            parsed = json.loads(clean_json)
+        except json.JSONDecodeError:
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "JSON extracted from model output could not be parsed.",
+                "warning": "Malformed model response",
+            }
 
-        severity = classify_severity(combined_symptoms)
-        conditions = suggest_conditions(combined_symptoms)
-        actions = suggest_actions(severity, combined_symptoms)
+        # Required field check
+        if "isAnimalPresent" not in parsed:
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "Model response was missing the required isAnimalPresent field.",
+                "warning": "Missing required field",
+            }
 
-        confidence = min(0.5 + 0.1 * len(combined_symptoms), 0.9)
+        # Hard stop: no animal
+        if parsed["isAnimalPresent"] is False:
+            return {
+                "visibleSymptoms": None,
+                "confidence": 0.0,
+                "imageSummary": "No animal was detected in the submitted image.",
+                "warning": "Analysis not applicable",
+            }
 
-        warning = None if combined_symptoms else "No clear symptoms detected"
+        # Sanitize: visibleSymptoms
+        symptoms = parsed.get("visibleSymptoms", [])
+        if isinstance(symptoms, str):
+            symptoms = [symptoms]
+        if not isinstance(symptoms, list):
+            symptoms = []
+        banned_words = ["disease", "infection", "parasite", "virus"]
+        symptoms = [
+            str(s).strip() for s in symptoms
+            if not any(word in str(s).lower() for word in banned_words)
+        ]
+        # Ordered dedupe — preserves model ordering, removes exact duplicates
+        seen = set()
+        symptoms = [s for s in symptoms if s and not (s in seen or seen.add(s))]
+        # Cap each symptom — prevents model generating essay-length entries
+        symptoms = [s[:120] for s in symptoms]
+
+        # Sanitize: confidence
+        confidence = parsed.get("confidence", 0.0)
+        if not isinstance(confidence, (int, float)):
+            confidence = 0.0
+        confidence = round(max(0.0, min(1.0, float(confidence))), 2)
+
+        # Sanitize: imageSummary
+        summary = parsed.get("imageSummary", "")
+        if not isinstance(summary, str):
+            summary = ""
+        summary = summary.strip()
+        # Blank only on clearly broken output — prompt enforces 30 word minimum
+        if len(summary.split()) < 5:
+            summary = ""
+        # Soft cap — prevents model returning an essay to the diagnosis service
+        if len(summary) > 600:
+            summary = summary[:600].rsplit(" ", 1)[0]
+
+        # Sanitize: warning — whitelist first, then non-destructive low-confidence fallback
+        warning = parsed.get("warning")
+        if warning not in ALLOWED_WARNINGS:
+            warning = None
+        if warning is None and confidence < 0.4:
+            warning = "Low confidence — interpret cautiously"
 
         return {
-            # ✅ CLEAN SEPARATION
-            "visibleSymptoms": image_symptoms,
-            "reportedSymptoms": reported_symptoms,
-
-            # 👇 derived from combined reasoning
-            "severity": severity,
-            "possibleConditions": conditions,
-            "recommendedActions": actions,
-
+            "visibleSymptoms": symptoms,
             "confidence": confidence,
-            "imageSummary": caption,
-            "warning": warning
+            "imageSummary": summary,
+            "warning": warning,
         }
 
-    except Exception as e:
+    except Exception:
         return {
-            "visibleSymptoms": [],
-            "reportedSymptoms": [],
-            "confidence": 0.1,
-            "imageSummary": "Processing failed",
-            "warning": str(e)
+            "visibleSymptoms": None,
+            "confidence": 0.0,
+            "imageSummary": "An unexpected error occurred during image processing.",
+            "warning": "Internal processing error",
         }

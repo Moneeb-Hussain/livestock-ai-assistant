@@ -1,58 +1,48 @@
-# 🐄 Livestock AI Assistant — Vision Service (Person 4)
+# 🐄 Livestock Vision Service
 
-This module handles **image-based symptom extraction** for livestock.
+This service performs **strict visual analysis of animal images** and returns structured observations for downstream processing.
 
-It processes an uploaded animal image and (optionally) user-provided symptoms, then returns structured medical observations.
+It is designed as a **low-level perception module** in a livestock health pipeline.
 
 ---
 
 ## 🚀 Features
 
 - Image upload handling (FastAPI)
-- Image → base64 conversion
-- Vision model integration (AI-based image understanding)
-- Symptom extraction from image
-- Symptom extraction from user text
-- Structured JSON response
-- Error handling & fallback support
+- Vision model integration (Gemini)
+- Strict visible symptom extraction (no hallucination)
+- Structured JSON output (fixed schema)
+- Input validation (file type, size)
+- Output sanitization (type-safe, filtered)
+- Robust error handling with safe fallbacks
 
 ---
 
 ## 🧠 What this service does
 
-Input:
-- Animal image
-- Optional user message (e.g. "My cow has fever")
+### Input
+- Animal image (required)
 
-Output:
-- visibleSymptoms → extracted from image
-- reportedSymptoms → extracted from user text
-- confidence score
-- imageSummary (AI description)
-- warning (if any issue occurs)
-
----
-
-## 📦 API Endpoint
-
-### POST `/analyze-image`
-
-### Request (multipart/form-data):
-
-| Field   | Type   | Required | Description |
-|--------|--------|----------|------------|
-| file   | Image  | Yes      | Animal image |
-| message| String | No       | User symptoms |
-
----
-
-## 📤 Example Response
+### Output (STRICT FORMAT)
 
 ```json
 {
-  "visibleSymptoms": ["skin lesions", "hair loss"],
-  "reportedSymptoms": ["fever"],
-  "confidence": 0.9,
-  "imageSummary": "Detected visible skin abnormalities...",
+  "visibleSymptoms": ["..."],
+  "confidence": 0.0,
+  "imageSummary": "...",
   "warning": null
 }
+```
+### Example JSON Response
+```
+{
+  "visibleSymptoms": [
+    "patches of hair loss",
+    "reddened skin areas",
+    "crusted lesions"
+  ],
+  "confidence": 0.72,
+  "imageSummary": "A brown livestock animal is shown from the side with multiple visible skin abnormalities. Several areas of hair loss expose reddened skin, and crusted lesions are scattered across the torso. The animal appears under natural lighting with a partially visible background.",
+  "warning": "Partial visibility of animal"
+}
+

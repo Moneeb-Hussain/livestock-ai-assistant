@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, reportOutbreakSignal, sendChatMessage } from "@/lib/api";
-import type { ChatHistoryItem, ChatResponse } from "@/lib/api/types";
+import type { ChatAttachment, ChatHistoryItem, ChatResponse } from "@/lib/api/types";
 import { AssistantMessageCard } from "@/components/chat/AssistantMessageCard";
-import { ChatComposer } from "@/components/chat/ChatComposer";
+import {
+  ChatComposer,
+  type PendingChatImage,
+} from "@/components/chat/ChatComposer";
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble";
 import { useCases } from "@/providers/cases-provider";
 
@@ -14,8 +17,17 @@ const SYSTEM_PROMPT: ChatHistoryItem = {
     "You are MaweshiAI, a livestock health assistant. Give safe, cautious guidance and recommend a vet for serious symptoms.",
 };
 
+const MAX_IMAGES = 3;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 type UiMessage =
-  | { id: string; role: "user"; text: string; time: string }
+  | {
+      id: string;
+      role: "user";
+      text: string;
+      time: string;
+      images?: string[];
+    }
   | {
       id: string;
       role: "assistant";
@@ -28,6 +40,50 @@ function timeNow() {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+function mergePendingImages(
+  prev: PendingChatImage[],
+  files: FileList,
+): { next: PendingChatImage[]; notice: string | null } {
+  const next = [...prev];
+  let notice: string | null = null;
+
+  for (let i = 0; i < files.length; i++) {
+    if (next.length >= MAX_IMAGES) {
+      notice = `You can attach up to ${MAX_IMAGES} images.`;
+      break;
+    }
+    const file = files[i];
+    if (!file.type.startsWith("image/")) {
+      notice = "Only image files are allowed.";
+      continue;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      notice = "Each image must be under 5 MB.";
+      continue;
+    }
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `img-${Date.now()}-${i}`;
+    next.push({
+      id,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  }
+
+  return { next, notice };
 }
 
 const demoAssistant: ChatResponse = {
@@ -75,6 +131,8 @@ export function ChatView() {
     "case-1": seedMessages("case-1"),
   }));
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportingId, setReportingId] = useState<string | null>(null);
@@ -92,11 +150,43 @@ export function ChatView() {
     });
   }, [activeCaseId]);
 
+  const appendTranscript = useCallback((text: string) => {
+    setInput((v) => (v ? `${v.trimEnd()} ` : "") + text);
+  }, []);
+
+  const handleAddImages = useCallback((files: FileList) => {
+    setComposerNotice(null);
+    setPendingImages((prev) => {
+      const { next, notice } = mergePendingImages(prev, files);
+      if (notice) {
+        queueMicrotask(() => setComposerNotice(notice));
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRemoveImage = useCallback((id: string) => {
+    setPendingImages((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found) URL.revokeObjectURL(found.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+    setComposerNotice(null);
+  }, []);
+
   const buildHistory = useCallback(
     (prior: UiMessage[], nextUserText: string): ChatHistoryItem[] => {
-      const tail: ChatHistoryItem[] = prior.flatMap((m) => {
+      const tail: ChatHistoryItem[] = prior.flatMap((m): ChatHistoryItem[] => {
         if (m.role === "user") {
-          return [{ role: "user", content: m.text }];
+          const extra = m.images?.length
+            ? `[User attached ${m.images.length} image(s) in the app.]`
+            : "";
+          return [
+            {
+              role: "user",
+              content: extra ? `${m.text}\n${extra}` : m.text,
+            },
+          ];
         }
         return [
           {
@@ -129,27 +219,68 @@ export function ChatView() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || !activeCaseId || loading) return;
+    const snapshot = pendingImages.map((p) => ({
+      id: p.id,
+      file: p.file,
+      previewUrl: p.previewUrl,
+    }));
+
+    if ((!text && snapshot.length === 0) || !activeCaseId || loading) {
+      return;
+    }
 
     setError(null);
+    setComposerNotice(null);
+
+    let attachments: ChatAttachment[] = [];
+    let imageDataUrls: string[] | undefined;
+
+    if (snapshot.length > 0) {
+      const dataUrls = await Promise.all(
+        snapshot.map((s) => readFileAsDataUrl(s.file)),
+      );
+      imageDataUrls = dataUrls;
+      attachments = snapshot.map((s, i) => ({
+        id: s.id,
+        mimeType: s.file.type || "image/jpeg",
+        name: s.file.name,
+        url: dataUrls[i],
+      }));
+    }
+
+    const displayText =
+      text ||
+      (snapshot.length
+        ? `[${snapshot.length} image${snapshot.length > 1 ? "s" : ""} attached]`
+        : "");
+
+    snapshot.forEach((s) => URL.revokeObjectURL(s.previewUrl));
+    setPendingImages([]);
     setInput("");
+
     const userMsg: UiMessage = {
       id: `u-${Date.now()}`,
       role: "user",
-      text,
+      text: displayText,
       time: timeNow(),
+      images: imageDataUrls,
     };
 
     const existing = byCase[activeCaseId] ?? [];
-    const chatHistory = buildHistory(existing, text);
+    const historyText =
+      displayText +
+      (attachments.length
+        ? `\n[${attachments.length} image(s) attached for the assistant.]`
+        : "");
+    const chatHistory = buildHistory(existing, historyText);
 
     appendMessages(activeCaseId, [userMsg]);
     setLoading(true);
 
     try {
       const data = await sendChatMessage({
-        message: text,
-        attachments: [],
+        message: text || "Please review the attached livestock image(s).",
+        attachments,
         chatHistory,
         caseId: activeCaseId,
       });
@@ -162,6 +293,13 @@ export function ChatView() {
       appendMessages(activeCaseId, [assistantMsg]);
     } catch (e) {
       setInput(text);
+      setPendingImages(
+        snapshot.map((s) => ({
+          id: s.id,
+          file: s.file,
+          previewUrl: URL.createObjectURL(s.file),
+        })),
+      );
       if (e instanceof ApiError) {
         setError(e.message);
       } else {
@@ -183,6 +321,7 @@ export function ChatView() {
     byCase,
     input,
     loading,
+    pendingImages,
   ]);
 
   const handleReport = useCallback(
@@ -215,7 +354,12 @@ export function ChatView() {
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
           {messages.map((m) =>
             m.role === "user" ? (
-              <UserMessageBubble key={m.id} text={m.text} time={m.time} />
+              <UserMessageBubble
+                key={m.id}
+                text={m.text}
+                time={m.time}
+                images={m.images}
+              />
             ) : (
               <AssistantMessageCard
                 key={m.id}
@@ -239,8 +383,14 @@ export function ChatView() {
       <ChatComposer
         value={input}
         onChange={setInput}
+        onAppendTranscript={appendTranscript}
         onSend={() => void handleSend()}
         disabled={loading || !activeCaseId}
+        maxImages={MAX_IMAGES}
+        pendingImages={pendingImages}
+        onAddImages={handleAddImages}
+        onRemoveImage={handleRemoveImage}
+        notice={composerNotice}
       />
     </div>
   );

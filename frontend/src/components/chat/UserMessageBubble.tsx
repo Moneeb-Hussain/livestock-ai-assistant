@@ -18,7 +18,11 @@ export function UserMessageBubble({ text, time, images }: Props) {
             "bg-brand-muted text-neutral-900 shadow-sm",
           )}
         >
-          {text ? <p className="whitespace-pre-wrap">{text}</p> : null}
+          {text ? (
+            <p className="whitespace-pre-wrap" dir="auto">
+              {text}
+            </p>
+          ) : null}
           {images && images.length > 0 ? (
             <MessageImageGrid
               images={images}

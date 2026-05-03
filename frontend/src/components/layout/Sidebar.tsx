@@ -23,7 +23,7 @@ const nav = [
 ] as const;
 
 export function Sidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const closeComingSoon = useCallback(() => setComingSoon(null), []);
 

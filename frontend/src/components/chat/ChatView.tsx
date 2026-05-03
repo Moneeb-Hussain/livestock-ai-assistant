@@ -17,7 +17,7 @@ const SYSTEM_PROMPT: ChatHistoryItem = {
     "You are MaweshiAI, a livestock health assistant. Give safe, cautious guidance and recommend a vet for serious symptoms.",
 };
 
-const MAX_IMAGES = 3;
+const MAX_IMAGES = 1;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 type UiMessage =
@@ -60,7 +60,10 @@ function mergePendingImages(
 
   for (let i = 0; i < files.length; i++) {
     if (next.length >= MAX_IMAGES) {
-      notice = `You can attach up to ${MAX_IMAGES} images.`;
+      notice =
+        MAX_IMAGES === 1
+          ? "Only one image per message."
+          : `You can attach up to ${MAX_IMAGES} images.`;
       break;
     }
     const file = files[i];

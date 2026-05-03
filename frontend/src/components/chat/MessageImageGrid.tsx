@@ -10,7 +10,7 @@ type Props = {
 };
 
 /**
- * Up to 3 columns for up to 3 images; tap any image for full-screen view.
+ * Responsive grid for message images; tap any image for full-screen view.
  */
 export function MessageImageGrid({ images, className }: Props) {
   const [lightbox, setLightbox] = useState<string | null>(null);

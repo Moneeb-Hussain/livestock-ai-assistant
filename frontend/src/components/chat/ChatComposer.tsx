@@ -18,12 +18,16 @@ type Props = {
   onSend: () => void;
   disabled?: boolean;
   pendingImages: PendingChatImage[];
-  /** Maximum images per message (default 3). */
+  /** Maximum images per message (default 1). */
   maxImages?: number;
   onAddImages: (files: FileList) => void;
   onRemoveImage: (id: string) => void;
   notice?: string | null;
 };
+
+const VOICE_LANG_STORAGE_KEY = "maweshi-voice-lang";
+
+export type VoiceDictationLang = "en-US" | "ur-PK";
 
 function getSpeechRecognitionCtor():
   | (new () => SpeechRecognition)
@@ -43,7 +47,7 @@ export function ChatComposer({
   onSend,
   disabled,
   pendingImages,
-  maxImages = 3,
+  maxImages = 1,
   onAddImages,
   onRemoveImage,
   notice,
@@ -53,8 +57,30 @@ export function ChatComposer({
   const [listening, setListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [voiceDictationLang, setVoiceDictationLangState] =
+    useState<VoiceDictationLang>("en-US");
 
   const voiceSupported = getSpeechRecognitionCtor() !== null;
+
+  const setVoiceDictationLang = useCallback((lang: VoiceDictationLang) => {
+    setVoiceDictationLangState(lang);
+    try {
+      localStorage.setItem(VOICE_LANG_STORAGE_KEY, lang);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(VOICE_LANG_STORAGE_KEY);
+      if (raw === "ur-PK" || raw === "en-US") {
+        setVoiceDictationLangState(raw);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const stopRecognition = useCallback(() => {
     try {
@@ -87,7 +113,7 @@ export function ChatComposer({
       return;
     }
     const rec = new Ctor();
-    rec.lang = "en-US";
+    rec.lang = voiceDictationLang;
     rec.continuous = true;
     rec.interimResults = false;
     rec.onresult = (event: SpeechRecognitionEvent) => {
@@ -115,7 +141,13 @@ export function ChatComposer({
       setVoiceError("Could not start microphone. Check permissions.");
       setListening(false);
     }
-  }, [disabled, listening, onAppendTranscript, stopRecognition]);
+  }, [
+    disabled,
+    listening,
+    onAppendTranscript,
+    stopRecognition,
+    voiceDictationLang,
+  ]);
 
   return (
     <div className="border-t border-neutral-200 bg-white px-6 py-4">
@@ -176,12 +208,12 @@ export function ChatComposer({
           <p className="px-2 text-xs text-amber-700">{voiceError ?? notice}</p>
         )}
 
-        <div className="flex items-end gap-1 sm:gap-2">
+        <div className="flex items-center gap-2 sm:gap-2.5">
           <input
             ref={imageInputRef}
             type="file"
             accept="image/*"
-            multiple
+            multiple={maxImages > 1}
             className="hidden"
             onChange={(e) => {
               const list = e.target.files;
@@ -194,45 +226,113 @@ export function ChatComposer({
             disabled={disabled || pendingImages.length >= maxImages}
             onClick={() => imageInputRef.current?.click()}
             className={cn(
-              "mb-1.5 rounded-xl p-2.5 text-neutral-500 transition",
+              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 transition",
               "hover:bg-white hover:text-brand",
               "disabled:cursor-not-allowed disabled:opacity-40",
               "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
             )}
-            title={`Add images (${pendingImages.length}/${maxImages})`}
-            aria-label={`Upload images, ${pendingImages.length} of ${maxImages} added`}
+            title={
+              maxImages === 1
+                ? pendingImages.length
+                  ? "Image added"
+                  : "Add one photo"
+                : `Add images (${pendingImages.length}/${maxImages})`
+            }
+            aria-label={
+              maxImages === 1
+                ? pendingImages.length
+                  ? "One image added"
+                  : "Add one image"
+                : `Upload images, ${pendingImages.length} of ${maxImages} added`
+            }
           >
             <ImagePlus className="h-5 w-5" strokeWidth={2} />
           </button>
 
-          <button
-            type="button"
-            disabled={disabled || !voiceSupported}
-            onClick={() => toggleVoice()}
-            className={cn(
-              "mb-1.5 rounded-xl p-2.5 transition",
-              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
-              listening
-                ? "bg-red-100 text-red-700 ring-2 ring-red-300 animate-pulse"
-                : "text-neutral-500 hover:bg-white hover:text-brand",
-              "disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-            title={
-              voiceSupported
-                ? listening
-                  ? "Stop voice input"
-                  : "Voice note — speak to type"
-                : "Voice input not supported in this browser"
-            }
-            aria-label={listening ? "Stop voice input" : "Voice note — speak to type"}
-            aria-pressed={listening}
+          <div
+            className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-neutral-200/90 bg-white px-1 py-1 shadow-sm"
+            role="group"
+            aria-label="Voice language"
           >
-            <Mic className="h-5 w-5" strokeWidth={2} />
-          </button>
+            <div
+              className="flex h-8 items-center rounded-full bg-neutral-100/90 p-0.5 ring-1 ring-neutral-200/60"
+              title="Speech language"
+            >
+              <button
+                type="button"
+                disabled={listening}
+                onClick={() => setVoiceDictationLang("en-US")}
+                className={cn(
+                  "h-7 min-w-[2rem] rounded-full px-2 text-[11px] font-semibold tracking-wide transition",
+                  voiceDictationLang === "en-US"
+                    ? "bg-white text-brand shadow-sm ring-1 ring-neutral-200/80"
+                    : "text-neutral-500 hover:text-neutral-800",
+                  listening && "cursor-not-allowed opacity-50",
+                )}
+                title="English speech"
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                disabled={listening}
+                onClick={() => setVoiceDictationLang("ur-PK")}
+                className={cn(
+                  "h-7 min-w-[2.25rem] rounded-full px-2 text-[12px] font-semibold transition",
+                  voiceDictationLang === "ur-PK"
+                    ? "bg-white text-brand shadow-sm ring-1 ring-neutral-200/80"
+                    : "text-neutral-500 hover:text-neutral-800",
+                  listening && "cursor-not-allowed opacity-50",
+                )}
+                title="Urdu speech (اردو)"
+                lang="ur"
+              >
+                اردو
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={disabled || !voiceSupported}
+              onClick={() => toggleVoice()}
+              className={cn(
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+                listening
+                  ? "bg-red-100 text-red-600 ring-2 ring-red-200/80 animate-pulse"
+                  : "text-neutral-500 hover:bg-neutral-50 hover:text-brand",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+              title={
+                voiceSupported
+                  ? listening
+                    ? "Stop voice input"
+                    : voiceDictationLang === "ur-PK"
+                      ? "Speak in Urdu"
+                      : "Speak in English"
+                  : "Voice input not supported in this browser"
+              }
+              aria-label={
+                listening
+                  ? "Stop voice input"
+                  : voiceDictationLang === "ur-PK"
+                    ? "Voice input — Urdu"
+                    : "Voice input — English"
+              }
+              aria-pressed={listening}
+            >
+              <Mic className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </div>
 
           <textarea
             rows={1}
-            placeholder="Type your message…"
+            dir="auto"
+            placeholder={
+              voiceDictationLang === "ur-PK"
+                ? "پیغام لکھیں یا مائیک سے بولیں…"
+                : "Type your message…"
+            }
             value={value}
             disabled={disabled}
             onChange={(e) => onChange(e.target.value)}
@@ -245,7 +345,7 @@ export function ChatComposer({
               }
             }}
             className={cn(
-              "max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm",
+              "max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm",
               "outline-none placeholder:text-neutral-400",
               disabled && "opacity-60",
             )}
@@ -256,7 +356,7 @@ export function ChatComposer({
             disabled={disabled || (!value.trim() && pendingImages.length === 0)}
             onClick={onSend}
             className={cn(
-              "mb-1.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
               "bg-brand text-brand-foreground shadow-sm transition",
               "hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40",
               "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",

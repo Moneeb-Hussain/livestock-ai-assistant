@@ -45,15 +45,34 @@ export type CaseSummary = {
   updatedAt: string;
 };
 
+/** Client-side fields; `reportOutbreakSignal` maps to backend snake_case body. */
 export type OutbreakReportPayload = {
+  /** Local case id (not sent to API; for logging / future use). */
   caseId: string;
+  /** Case title, e.g. "Goat — …", used to infer `animal_type` when `animalType` is missing. */
+  caseLabel?: string;
+  /** Required by backend `animal_type`; infer from case label if omitted. */
   animalType?: string;
+  /** Required by backend `symptom_group` as comma-separated keywords. */
   symptomSummary?: string;
   possibleConditions?: string[];
   severity?: string;
   latitude?: number;
   longitude?: number;
   locationName?: string;
+  language?: string;
+};
+
+/** POST `/api/outbreaks` success shape from FastAPI + `outbreak_service`. */
+export type OutbreakReportResult = {
+  success: boolean;
+  report?: unknown;
+  alert_status?: {
+    alert_created?: boolean;
+    alert_updated?: boolean;
+    risk_level?: string;
+    case_count?: number;
+  };
 };
 
 export type VetSearchParams = {

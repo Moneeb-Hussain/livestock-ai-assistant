@@ -15,11 +15,19 @@ type JsonInit = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
+type ApiFetchOptions = {
+  /** Full request URL (bypasses `appConfig.apiBaseUrl`). Use for same-origin rewrites. */
+  absoluteUrl?: string;
+};
+
 export async function apiFetch<T>(
   path: string,
   init: JsonInit = {},
+  options?: ApiFetchOptions,
 ): Promise<T> {
-  const url = `${appConfig.apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = options?.absoluteUrl
+    ? options.absoluteUrl
+    : `${appConfig.apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
   const headers = new Headers(init.headers);
 
   let body: BodyInit | undefined = init.body as BodyInit | undefined;

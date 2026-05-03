@@ -59,3 +59,43 @@ export function formatOutbreakAlertDescription(row: OutbreakAlertRow): string {
   const symptoms = row.symptom_group?.trim() || "Symptoms not listed";
   return `${cases} in 48h window · ${symptoms}`;
 }
+
+const USER_NOTE_SPLIT = /\buser_note:\s*/i;
+
+export type ParsedSymptomDisplay = {
+  /** Short tags (comma-separated) before `user_note:` */
+  keywords: string[];
+  /** Free-text from the reporter after `user_note:` */
+  farmerNote: string | null;
+};
+
+/**
+ * Splits stored `symptom_group` into keyword chips and an optional long note.
+ * Hides raw `user_note:` in the UI — use `farmerNote` with a proper label.
+ */
+export function parseSymptomForDisplay(
+  symptomGroup: string | null | undefined,
+): ParsedSymptomDisplay {
+  const raw = (symptomGroup ?? "").trim();
+  if (!raw) return { keywords: [], farmerNote: null };
+
+  const m = raw.match(USER_NOTE_SPLIT);
+  if (m && m.index !== undefined) {
+    const before = raw.slice(0, m.index).trim();
+    const after = raw.slice(m.index + m[0].length).trim();
+    const keywords = before
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    return {
+      keywords,
+      farmerNote: after.length > 0 ? after : null,
+    };
+  }
+
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 1 && parts[0].length > 200) {
+    return { keywords: [], farmerNote: parts[0] };
+  }
+  return { keywords: parts, farmerNote: null };
+}

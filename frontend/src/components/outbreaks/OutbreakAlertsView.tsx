@@ -5,9 +5,10 @@ import {
   Activity,
   AlertTriangle,
   Bell,
-  Loader2,
+  ChevronDown,
   MapPin,
   Radio,
+  Users,
   WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import type { OutbreakAlertRow } from "@/lib/api/types";
 import {
   formatOutbreakAlertDescription,
   formatOutbreakAlertTitle,
+  parseSymptomForDisplay,
 } from "@/lib/outbreak-alerts";
 import { useOutbreakAlertsRealtime } from "@/hooks/use-outbreak-alerts-realtime";
 import { cn } from "@/lib/utils";
@@ -47,20 +49,207 @@ function riskStyles(risk: string): { label: string; className: string } {
   if (r === "confirmed") {
     return {
       label: "Confirmed",
-      className: "bg-red-100 text-red-900 ring-1 ring-red-200/80",
+      className: "bg-red-50 text-red-900 ring-1 ring-red-100",
     };
   }
   if (r === "likely") {
     return {
       label: "Likely",
-      className: "bg-amber-100 text-amber-950 ring-1 ring-amber-200/80",
+      className: "bg-amber-50 text-amber-950 ring-1 ring-amber-100",
     };
   }
   return {
     label: "Possible",
-    className: "bg-sky-100 text-sky-950 ring-1 ring-sky-200/80",
+    className: "bg-sky-50 text-sky-950 ring-1 ring-sky-100",
   };
 }
+
+function SkeletonBar({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "animate-pulse rounded-md bg-neutral-200/85 motion-reduce:animate-none motion-reduce:bg-neutral-200",
+        className,
+      )}
+      aria-hidden
+    />
+  );
+}
+
+function OutbreakAlertSkeletonCard() {
+  return (
+    <div
+      className="rounded-2xl border border-neutral-200/70 bg-white p-5 shadow-sm"
+      aria-hidden
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-100 pb-4">
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <SkeletonBar className="h-6 w-[40%] max-w-[180px]" />
+          <SkeletonBar className="h-4 w-[75%] max-w-[320px]" />
+        </div>
+        <SkeletonBar className="h-7 w-[5.5rem] shrink-0 rounded-full" />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <SkeletonBar className="h-6 w-20 rounded-full" />
+        <SkeletonBar className="h-6 w-24 rounded-full" />
+        <SkeletonBar className="h-6 w-16 rounded-full" />
+      </div>
+      <SkeletonBar className="mt-4 h-16 w-full rounded-xl" />
+    </div>
+  );
+}
+
+function OutbreakAlertsLoading() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading outbreak clusters">
+      <p className="text-sm text-neutral-500">Loading latest clusters…</p>
+      <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <li key={i}>
+            <OutbreakAlertSkeletonCard />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const NOTE_CLAMP_CHARS = 320;
+
+function OutbreakAlertCard({ alert: a }: { alert: OutbreakAlertRow }) {
+  const [noteOpen, setNoteOpen] = useState(false);
+  const risk = riskStyles(a.risk_level);
+  const when = formatRelative(a.updated_at || a.created_at);
+  const parsed = useMemo(
+    () => parseSymptomForDisplay(a.symptom_group),
+    [a.symptom_group],
+  );
+  const note = parsed.farmerNote;
+  const noteNeedsToggle = note != null && note.length > NOTE_CLAMP_CHARS;
+  const noteDisplay =
+    note && noteNeedsToggle && !noteOpen
+      ? `${note.slice(0, NOTE_CLAMP_CHARS).trim()}…`
+      : note;
+
+  const hasKeywords = parsed.keywords.length > 0;
+  const hasBody = hasKeywords || note != null;
+
+  return (
+    <article
+      className={cn(
+        "flex h-full flex-col rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-sm",
+        "transition-shadow hover:shadow-md md:p-6",
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-100 pb-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <h2 className="text-xl font-semibold capitalize tracking-tight text-neutral-900">
+            {a.animal_type}
+          </h2>
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
+            <span className="inline-flex items-start gap-2 text-sm font-medium leading-snug text-neutral-800">
+              <MapPin
+                className="mt-0.5 h-4 w-4 shrink-0 text-brand/80"
+                strokeWidth={2}
+                aria-hidden
+              />
+              <span>{a.location_name?.trim() || "Area not specified"}</span>
+            </span>
+            {when ? (
+              <time
+                className="text-xs font-medium uppercase tracking-wide text-neutral-500 sm:text-sm sm:normal-case sm:tracking-normal"
+                dateTime={a.updated_at || a.created_at || undefined}
+              >
+                {when}
+              </time>
+            ) : null}
+          </div>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-3 py-1 text-xs font-semibold",
+            risk.className,
+          )}
+        >
+          {risk.label}
+        </span>
+      </div>
+
+      {hasBody ? (
+        <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
+          {hasKeywords ? (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                Reported signs
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-2" aria-label="Symptom keywords">
+                {parsed.keywords.slice(0, 14).map((k, i) => (
+                  <li key={`${i}-${k.slice(0, 40)}`}>
+                    <span className="inline-block max-w-[220px] truncate rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-800 ring-1 ring-neutral-200/80">
+                      {k}
+                    </span>
+                  </li>
+                ))}
+                {parsed.keywords.length > 14 ? (
+                  <li className="flex items-center">
+                    <span className="text-xs font-medium text-neutral-500">
+                      +{parsed.keywords.length - 14} more
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
+
+          {note != null ? (
+            <div className="min-h-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                Report detail
+              </p>
+              <div
+                className={cn(
+                  "mt-1.5 rounded-xl border border-neutral-200/80 bg-neutral-50/90 px-3.5 py-3 text-sm leading-relaxed text-neutral-700",
+                  noteNeedsToggle && !noteOpen && "max-h-[11rem] overflow-hidden",
+                )}
+              >
+                <p className="whitespace-pre-wrap break-words">{noteDisplay}</p>
+              </div>
+              {noteNeedsToggle ? (
+                <button
+                  type="button"
+                  onClick={() => setNoteOpen((o) => !o)}
+                  className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+                >
+                  {noteOpen ? "Show less" : "Read full report"}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform",
+                      noteOpen && "rotate-180",
+                    )}
+                    aria-hidden
+                  />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-neutral-500">No symptom summary stored.</p>
+      )}
+
+      <div className="mt-auto border-t border-neutral-100 pt-3">
+        <p className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+          <Users className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+          {a.case_count === 1
+            ? "1 matching report · 48h window"
+            : `${a.case_count} matching reports · 48h window`}
+        </p>
+      </div>
+    </article>
+  );
+}
+
+const shell = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8";
 
 export function OutbreakAlertsView() {
   const [alerts, setAlerts] = useState<OutbreakAlertRow[]>([]);
@@ -125,179 +314,153 @@ export function OutbreakAlertsView() {
     onUpdate,
   });
 
-  const statusBanner = useMemo(() => {
+  const statusLine = useMemo(() => {
     if (realtimeStatus === "no_config") {
       return {
         tone: "muted" as const,
         icon: WifiOff,
-        text: "Live updates are off. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) to frontend/.env.local or frontend/src/.env.local — names must start with NEXT_PUBLIC_. Restart `npm run dev` after saving.",
+        text: "Live updates off — set Supabase URL + anon key in frontend/.env.local, then restart dev.",
       };
     }
     if (realtimeStatus === "error") {
       return {
         tone: "warn" as const,
         icon: WifiOff,
-        text: "Could not subscribe to live updates. Pull to refresh the list, or check Supabase Realtime for outbreak_alerts.",
+        text: "Live feed unavailable. List below is from the last server fetch.",
       };
     }
     if (realtimeStatus === "connecting") {
       return {
         tone: "info" as const,
         icon: Radio,
-        text: "Connecting to live outbreak feed…",
+        text: "Connecting to live updates…",
       };
     }
     if (realtimeStatus === "subscribed") {
       return {
         tone: "live" as const,
         icon: Activity,
-        text: "Listening for new and updated alerts in real time.",
+        text: "Live — new clusters appear here and as a toast.",
       };
     }
     return null;
   }, [realtimeStatus]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-brand-surface">
-      <div className="border-b border-neutral-200/80 bg-white px-5 py-4 shadow-card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold text-neutral-900">
-              Outbreak alerts
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-              Aggregated local signals from community reports. New rows appear
-              when similar symptoms cluster in the same area within 48 hours.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs font-medium text-neutral-700">
-            <Bell className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
-            {alerts.length} active {alerts.length === 1 ? "cluster" : "clusters"}
+    <div className="flex min-h-0 flex-1 flex-col bg-neutral-50/90">
+      <header className="shrink-0 border-b border-neutral-200/70 bg-white">
+        <div className={cn(shell, "py-8 lg:py-10")}>
+          <div className="lg:grid lg:grid-cols-12 lg:items-start lg:gap-10">
+            <div className="lg:col-span-7">
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Community signals
+              </p>
+              <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">
+                Outbreak alerts
+              </h1>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-neutral-600">
+                Same animal, overlapping symptoms, same area within 48 hours —
+                grouped so you can spot local pressure early.
+              </p>
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-neutral-200/90 bg-neutral-50/90 p-4 sm:p-5 lg:col-span-5 lg:mt-0">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  Summary
+                </p>
+                {loading ? (
+                  <div
+                    className="flex h-8 min-w-[6.5rem] items-center justify-center gap-2 rounded-full bg-white px-3 shadow-sm"
+                    aria-hidden
+                  >
+                    <SkeletonBar className="h-3.5 w-3.5 shrink-0 rounded-full" />
+                    <SkeletonBar className="h-3 w-12 rounded-full" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold tabular-nums text-neutral-800 shadow-sm ring-1 ring-neutral-200/80">
+                    <Bell className="h-3.5 w-3.5 text-brand" strokeWidth={2} aria-hidden />
+                    {alerts.length} cluster{alerts.length === 1 ? "" : "s"}
+                  </div>
+                )}
+              </div>
+
+              {statusLine ? (
+                <div
+                  className={cn(
+                    "mt-4 flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-xs leading-snug sm:text-sm",
+                    statusLine.tone === "live" &&
+                      "bg-emerald-50/95 text-emerald-950 ring-1 ring-emerald-100",
+                    statusLine.tone === "info" &&
+                      "bg-white text-neutral-800 ring-1 ring-neutral-200/80",
+                    statusLine.tone === "muted" &&
+                      "bg-white text-neutral-600 ring-1 ring-neutral-200/70",
+                    statusLine.tone === "warn" &&
+                      "bg-amber-50/95 text-amber-950 ring-1 ring-amber-100",
+                  )}
+                >
+                  <statusLine.icon
+                    className={cn(
+                      "mt-0.5 h-4 w-4 shrink-0",
+                      statusLine.tone === "live" && "text-emerald-600",
+                      statusLine.tone === "info" && "text-neutral-500",
+                      statusLine.tone === "muted" && "text-neutral-400",
+                      statusLine.tone === "warn" && "text-amber-700",
+                    )}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                  <p className="min-w-0 flex-1">{statusLine.text}</p>
+                  {statusLine.tone === "live" ? (
+                    <span
+                      className="mt-1 inline-flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-500"
+                      title="Subscribed"
+                      aria-hidden
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
+      </header>
 
-        {statusBanner ? (
-          <div
-            className={cn(
-              "mt-4 flex gap-3 rounded-xl border px-3 py-2.5 text-sm leading-snug",
-              statusBanner.tone === "live" &&
-                "border-emerald-200 bg-emerald-50/90 text-emerald-950",
-              statusBanner.tone === "info" &&
-                "border-neutral-200 bg-neutral-50 text-neutral-800",
-              statusBanner.tone === "muted" &&
-                "border-neutral-200 bg-white text-neutral-600",
-              statusBanner.tone === "warn" &&
-                "border-amber-200 bg-amber-50/90 text-amber-950",
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn(shell, "py-6 sm:py-8 lg:py-10")}>
+          <div className="mx-auto max-w-6xl">
+            {loading ? (
+              <OutbreakAlertsLoading />
+            ) : fetchError ? (
+              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 px-5 py-6 text-center text-sm text-amber-950">
+                {fetchError}
+              </div>
+            ) : alerts.length === 0 ? (
+              <div className="mx-auto max-w-lg rounded-2xl border border-neutral-200/80 bg-white p-6 shadow-sm sm:p-8">
+                <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:text-left">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-muted text-brand">
+                    <Bell className="h-7 w-7" strokeWidth={1.5} aria-hidden />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-neutral-900">No clusters yet</p>
+                    <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+                      When enough similar reports arrive for one area, they will
+                      show here. Enable live updates for instant toasts.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
+                {alerts.map((a) => (
+                  <li key={a.id}>
+                    <OutbreakAlertCard alert={a} />
+                  </li>
+                ))}
+              </ul>
             )}
-          >
-            <statusBanner.icon
-              className={cn(
-                "mt-0.5 h-4 w-4 shrink-0",
-                statusBanner.tone === "live" && "text-emerald-600",
-                statusBanner.tone === "info" && "text-neutral-500",
-                statusBanner.tone === "muted" && "text-neutral-400",
-                statusBanner.tone === "warn" && "text-amber-700",
-              )}
-              strokeWidth={2}
-              aria-hidden
-            />
-            <p>{statusBanner.text}</p>
-            {statusBanner.tone === "live" ? (
-              <span
-                className="ml-auto inline-flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-500"
-                title="Subscribed"
-                aria-hidden
-              />
-            ) : null}
           </div>
-        ) : null}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-20 text-neutral-500">
-            <Loader2 className="h-8 w-8 animate-spin text-brand" />
-            <p className="text-sm">Loading alerts…</p>
-          </div>
-        ) : fetchError ? (
-          <div className="mx-auto max-w-md rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-5 text-center text-sm text-amber-950">
-            {fetchError}
-          </div>
-        ) : alerts.length === 0 ? (
-          <div className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-neutral-300 bg-white/60 px-6 py-14 text-center">
-            <Bell className="h-10 w-10 text-brand/80" strokeWidth={1.5} />
-            <p className="text-sm font-medium text-neutral-800">
-              No active outbreak clusters
-            </p>
-            <p className="text-sm text-neutral-600">
-              When enough similar reports arrive for the same animal and area,
-              they will appear here. You will get a toast if live updates are
-              enabled.
-            </p>
-          </div>
-        ) : (
-          <ul className="mx-auto flex max-w-3xl flex-col gap-3">
-            {alerts.map((a) => {
-              const risk = riskStyles(a.risk_level);
-              const when = formatRelative(a.updated_at || a.created_at);
-              return (
-                <li key={a.id}>
-                  <article
-                    className={cn(
-                      "rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-card",
-                      "transition hover:border-neutral-300/90",
-                    )}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-base font-semibold capitalize text-neutral-900">
-                          {a.animal_type}
-                        </h2>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-600">
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin
-                              className="h-3.5 w-3.5 shrink-0 text-neutral-400"
-                              aria-hidden
-                            />
-                            {a.location_name?.trim() || "Area not specified"}
-                          </span>
-                          {when ? (
-                            <>
-                              <span className="text-neutral-300" aria-hidden>
-                                ·
-                              </span>
-                              <span className="text-neutral-500">{when}</span>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                          risk.className,
-                        )}
-                      >
-                        {risk.label}
-                      </span>
-                    </div>
-                    <p className="mt-3 line-clamp-2 text-sm text-neutral-600">
-                      <span className="font-medium text-neutral-700">
-                        Symptoms:{" "}
-                      </span>
-                      {a.symptom_group?.trim() || "—"}
-                    </p>
-                    <p className="mt-2 text-xs text-neutral-500">
-                      {a.case_count === 1
-                        ? "1 matching report in window"
-                        : `${a.case_count} matching reports in window`}
-                    </p>
-                  </article>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

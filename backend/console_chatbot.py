@@ -21,7 +21,14 @@ def print_response(response: Dict) -> None:
 
     print("\nMaweshiAI:")
 
-    if response_type == "non_medical":
+    if response_type == "false_input":
+        print(response.get("chatReply", ""))
+
+        reason = response.get("reason")
+        if reason:
+            print(f"\nReason: {reason}")
+
+    elif response_type == "non_medical":
         print(response.get("chatReply", ""))
 
         questions = response.get("questions", [])
@@ -29,7 +36,7 @@ def print_response(response: Dict) -> None:
             print("\nQuestions:")
             for index, question in enumerate(questions, start=1):
                 print(f"{index}. {question}")
-
+    
         safe_note = response.get("safeNote")
         if safe_note:
             print(f"\nSafety note: {safe_note}")
@@ -91,47 +98,31 @@ def format_section_title(value: str) -> str:
 
 
 def build_assistant_history_content(response: Dict) -> str:
-    """
-    Store enough assistant context so the LLM remembers what it already asked or advised.
-    """
     response_type = response.get("responseType")
-    parts = [response.get("chatReply", "")]
 
     if response_type == "non_medical":
         questions = response.get("questions", [])
-        if questions:
-            parts.append("Questions asked:")
-            parts.extend(f"- {question}" for question in questions)
+        return "Assistant asked: " + "; ".join(questions)
 
-        safe_note = response.get("safeNote")
-        if safe_note:
-            parts.append(f"Safety note: {safe_note}")
-
-    elif response_type == "medical":
+    if response_type == "medical":
         possible_conditions = response.get("possibleConditions", [])
-        if possible_conditions:
-            parts.append("Possible conditions:")
-            parts.extend(f"- {item}" for item in possible_conditions)
-
         care_steps = response.get("careSteps", [])
+        follow_ups = response.get("treatmentPlan", {}).get("followUpQuestions", [])
+
+        parts = []
+
+        if possible_conditions:
+            parts.append("Medical response possible conditions: " + ", ".join(possible_conditions))
+
         if care_steps:
-            parts.append("Care steps:")
-            parts.extend(f"- {step}" for step in care_steps)
+            parts.append("Medical response care steps: " + "; ".join(care_steps))
 
-        treatment_plan = response.get("treatmentPlan", {})
-        if treatment_plan:
-            parts.append("Treatment plan:")
-            for section_name, items in treatment_plan.items():
-                parts.append(f"{section_name}:")
-                parts.extend(f"- {item}" for item in items)
+        if follow_ups:
+            parts.append("Medical response follow-up questions: " + "; ".join(follow_ups))
 
-        disclaimer = response.get("disclaimer")
-        if disclaimer:
-            parts.append(f"Disclaimer: {disclaimer}")
+        return "\n".join(parts)
 
-    return "\n".join(part for part in parts if part)
-
-
+    return response.get("chatReply", "")    
 def print_history(chat_history: List[Dict[str, str]]) -> None:
     if not chat_history:
         print("\nNo chat history yet.\n")
@@ -179,19 +170,6 @@ def main() -> None:
 
             print_response(response)
 
-            chat_history.append(
-                {
-                    "role": "user",
-                    "content": user_input,
-                }
-            )
-
-            chat_history.append(
-                {
-                    "role": "assistant",
-                    "content": build_assistant_history_content(response),
-                }
-            )
 
         except Exception as error:
             print(f"\nError: {str(error)}")

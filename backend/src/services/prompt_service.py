@@ -2,51 +2,39 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
 MAX_HISTORY_MESSAGES = 6
 
 PROMPTS_FILE_PATH = (
     Path(__file__).resolve().parent.parent / "config" / "prompts.json"
 )
 
-
 def load_prompt_config() -> Dict[str, Any]:
-    """
-    Load prompt configuration from backend/src/config/prompts.json.
-    """
-    
+   
     if not PROMPTS_FILE_PATH.exists():
         raise FileNotFoundError(f"Prompt config not found: {PROMPTS_FILE_PATH}")
 
     with PROMPTS_FILE_PATH.open("r", encoding="utf-8") as file:
         return json.load(file)
 
-
 def get_system_prompt() -> str:
-    """
-    Build the full system prompt from prompts.json.
-    """
+    
     config = load_prompt_config()
     system = config["system"]
 
     return "\n\n".join(
         [
             system["identity"],
+            format_examples("Decision examples", system.get("examples", [])),
             format_rules("Critical safety rules", system["safetyRules"]),
+            format_rules("Input Scope Rules", system["inputScopeRules"]),
             format_rules("Response decision rules", system["responseDecisionRules"]),
             format_rules("Language rules", system["languageRules"]),
             format_rules("JSON rules", system["jsonRules"]),
-            format_schema(
-                "Non-medical response schema",
-                system["responseSchemas"]["nonMedical"],
-            ),
-            format_schema(
-                "Medical response schema",
-                system["responseSchemas"]["medical"],
-            ),
+            format_schema("Non-medical response schema", system["responseSchemas"]["nonMedical"]),
+            format_schema("Medical response schema",system["responseSchemas"]["medical"]),
+            format_schema("False Input response schema",system["responseSchemas"]["falseInput"])
         ]
     )
-
 
 def build_chat_prompt(
     message: str,
@@ -54,16 +42,7 @@ def build_chat_prompt(
     image_observations: Optional[Dict[str, Any]] = None,
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """
-    Build the user prompt sent to the LLM.
-
-    Includes:
-    - latest user message
-    - optional animal type
-    - rule-based case summary if chat history is long
-    - only last 6 recent messages
-    - optional image observations
-    """
+    
     cleaned_message = clean_text(message)
 
     if not cleaned_message:
@@ -78,20 +57,14 @@ def build_chat_prompt(
         latest_message=cleaned_message,
     )
 
-    animal_type = infer_animal_type(
-        message=cleaned_message,
-        chat_history=cleaned_history,
-        animal_type=animal_type,
-    )
+    animal_type = infer_animal_type(message=cleaned_message,chat_history=cleaned_history,animal_type=animal_type,)
 
     older_messages, recent_messages = split_chat_history(cleaned_history)
 
-    case_summary_text = build_case_summary_text(
-        older_messages=older_messages,
-        animal_type=animal_type,
-    )
+    case_summary_text = build_case_summary_text(older_messages=older_messages,animal_type=animal_type,)
 
     recent_history_text = build_chat_history_text(recent_messages)
+
     image_text = build_image_observation_text(image_observations)
 
     return "\n".join(
@@ -111,10 +84,112 @@ def build_chat_prompt(
             f"{sections['imageObservations']}:",
             image_text,
             "",
+            "Decision checklist:",
+            "- Check whether animal type is already available.",
+            "- Check whether symptoms are already available.",
+            "- Check whether symptom duration is already available.",
+            "- Check whether eating/drinking status is already available.",
+            "- If these are available, return medical.",
+            "- Do not ask again for already provided information.",
+            "",
             *closing_instructions,
         ]
     )
 
+def build_groq_messages(
+    system_prompt: str,
+    message: str,
+    animal_type: Optional[str] = None,
+    image_observations: Optional[Dict[str, Any]] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+) -> List[Dict[str, str]]:
+    """
+    - If conversation has up to 6 user messages, send full conversation with user/assistant roles.
+    - If conversation has more than 6 user messages:
+      - summarize older messages into first user message
+      - append recent messages with original user/assistant roles
+    - Latest message is always appended as the final user message.
+    """
+
+    cleaned_message = clean_text(message)
+
+    if not cleaned_message:
+        raise ValueError("Message cannot be empty.")
+
+    cleaned_history = remove_duplicate_latest_message(chat_history=chat_history,latest_message=cleaned_message)
+
+    animal_type = infer_animal_type(message=cleaned_message,chat_history=cleaned_history,animal_type=animal_type)
+
+    full_conversation = cleaned_history + [
+        {
+            "role": "user",
+            "content": cleaned_message,
+        }
+    ]
+
+    older_messages, recent_messages = split_by_user_message_limit(
+        messages=full_conversation,
+        max_user_messages=6,
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt,
+        }
+    ]
+
+    if older_messages:
+        case_summary_text = build_case_summary_text(
+            older_messages=older_messages,
+            animal_type=animal_type,
+        )
+
+        context_message = build_context_message_text(
+            animal_type=animal_type,
+            case_summary_text=case_summary_text,
+            image_observations=image_observations,
+        )
+
+        messages.append(
+            {
+                "role": "user",
+                "content": context_message,
+            }
+        )
+    # else:
+    #     context_message = build_context_message_text(
+    #         animal_type=animal_type,
+    #         case_summary_text="none",
+    #         image_observations=image_observations,
+    #     )
+
+        messages.append(
+            {
+                "role": "user",
+                "content": context_message,
+            }
+        )
+
+    for item in recent_messages:
+        role = normalize_role(item.get("role", "user"))
+        content = clean_text(item.get("content", ""))
+
+        if role not in ["user", "assistant"]:
+            role = "user"
+
+        if content:
+            messages.append(
+                {
+                    "role": role,
+                    "content": content,
+                }
+            )
+
+    return messages
+
+def format_examples(title: str, examples: List[Dict[str, Any]]) -> str:
+    return f"{title}:\n{json.dumps(examples, indent=2, ensure_ascii=False)}"
 
 def build_retry_instruction(error: Exception) -> str:
     """
@@ -125,7 +200,6 @@ def build_retry_instruction(error: Exception) -> str:
 
     return "\n\n" + template.format(error=str(error))
 
-
 def get_fallback_response() -> Dict[str, Any]:
     """
     Return fallback non_medical response from prompts.json.
@@ -133,24 +207,15 @@ def get_fallback_response() -> Dict[str, Any]:
     config = load_prompt_config()
     return config["fallback"]
 
-
 def remove_duplicate_latest_message(
     chat_history: Optional[List[Dict[str, str]]],
     latest_message: str,
 ) -> List[Dict[str, str]]:
-    """
-    Remove latest message from chat history if frontend accidentally includes it.
-
-    Expected:
-    - message = latest user message
-    - chat_history = previous messages only
-
-    This helper prevents sending duplicate latest message to the LLM.
-    """
+    
     if not chat_history:
         return []
 
-    cleaned_latest_message = clean_text(latest_message)
+    latest_message = clean_text(latest_message)
 
     cleaned_history: List[Dict[str, str]] = []
 
@@ -173,27 +238,16 @@ def remove_duplicate_latest_message(
 
     if (
         last_item["role"] == "user"
-        and clean_text(last_item["content"]).lower() == cleaned_latest_message.lower()
+        and clean_text(last_item["content"]).lower() == latest_message.lower()
     ):
         return cleaned_history[:-1]
 
     return cleaned_history
 
-
 def split_chat_history(
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
-    """
-    Split chat history into older messages and recent messages.
-
-    If history is longer than MAX_HISTORY_MESSAGES:
-    - older_messages = messages before the last 6
-    - recent_messages = last 6 messages
-
-    Otherwise:
-    - older_messages = []
-    - recent_messages = full cleaned history
-    """
+  
     if not chat_history:
         return [], []
 
@@ -219,19 +273,11 @@ def split_chat_history(
         cleaned_history[-MAX_HISTORY_MESSAGES:],
     )
 
-
 def build_case_summary_text(
     older_messages: List[Dict[str, str]],
     animal_type: Optional[str] = None,
 ) -> str:
-    """
-    Build a simple rule-based case summary from older messages.
-
-    This does not call the LLM.
-    It only extracts useful known case context from older conversation.
-    """
-    config = load_prompt_config()
-
+    
     if not older_messages:
         return "none"
 
@@ -247,9 +293,9 @@ def build_case_summary_text(
 
     summary_parts = []
 
-    cleaned_animal_type = clean_text(animal_type)
-    if cleaned_animal_type:
-        summary_parts.append(f"This case involves a {cleaned_animal_type}.")
+    animal_type = clean_text(animal_type)
+    if animal_type:
+        summary_parts.append(f"This case involves a {animal_type}.")
 
     if symptoms:
         summary_parts.append(
@@ -285,7 +331,6 @@ def build_case_summary_text(
 
     return " ".join(summary_parts)
 
-
 def build_chat_history_text(
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
@@ -306,7 +351,6 @@ def build_chat_history_text(
             lines.append(f"{role}: {content}")
 
     return "\n".join(lines) if lines else "none"
-
 
 def build_image_observation_text(
     image_observations: Optional[Dict[str, Any]] = None,
@@ -350,12 +394,8 @@ def build_image_observation_text(
         ]
     )
 
-
 def extract_known_symptoms(text: str) -> List[str]:
-    """
-    Rule-based symptom extraction for case summary.
-    This is intentionally simple for MVP.
-    """
+    
     symptom_keywords = {
         "fever": ["fever", "bukhar", "temperature", "high temp"],
         "mouth blisters": [
@@ -403,11 +443,8 @@ def extract_known_symptoms(text: str) -> List[str]:
 
     return detected
 
-
 def extract_duration(text: str) -> Optional[str]:
-    """
-    Extract rough duration clues from older conversation.
-    """
+    
     lower_text = text.lower()
 
     duration_phrases = [
@@ -437,11 +474,8 @@ def extract_duration(text: str) -> Optional[str]:
 
     return None
 
-
 def extract_eating_drinking_status(text: str) -> Optional[str]:
-    """
-    Extract rough eating/drinking status from older conversation.
-    """
+    
     lower_text = text.lower()
 
     if any(
@@ -479,7 +513,6 @@ def extract_eating_drinking_status(text: str) -> Optional[str]:
 
     return None
 
-
 def extract_previous_advice(messages: List[Dict[str, str]]) -> List[str]:
     """
     Extract simple previous advice from older assistant messages.
@@ -506,7 +539,6 @@ def extract_previous_advice(messages: List[Dict[str, str]]) -> List[str]:
 
     return detected
 
-
 def extract_open_questions(messages: List[Dict[str, str]]) -> List[str]:
     """
     Extract earlier assistant questions from older messages.
@@ -523,24 +555,19 @@ def extract_open_questions(messages: List[Dict[str, str]]) -> List[str]:
 
     return questions
 
-
 def format_rules(title: str, rules: List[str]) -> str:
-    """
-    Format a list of rules as numbered prompt text.
-    """
+    
     formatted_rules = "\n".join(
         f"{index}. {rule}" for index, rule in enumerate(rules, start=1)
     )
 
     return f"{title}:\n{formatted_rules}"
 
-
 def format_schema(title: str, schema: Dict[str, Any]) -> str:
     """
     Format response schema/example as pretty JSON text inside the prompt.
     """
     return f"{title}:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
-
 
 def normalize_role(role: str) -> str:
     """
@@ -556,15 +583,78 @@ def normalize_role(role: str) -> str:
 
     return "user"
 
-
 def clean_text(value: Optional[Any]) -> str:
-    """
-    Clean text by trimming and collapsing whitespace.
-    """
+    
     if value is None:
         return ""
 
     return " ".join(str(value).strip().split())
+
+def split_by_user_message_limit(
+    messages: List[Dict[str, str]],
+    max_user_messages: int = 6,
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+
+    if not messages:
+        return [], []
+
+    user_count = 0
+    split_index = 0
+
+    for index in range(len(messages) - 1, -1, -1):
+        role = normalize_role(messages[index].get("role", "user"))
+
+        if role == "user":
+            user_count += 1
+
+        if user_count > max_user_messages:
+            split_index = index + 1
+            break
+
+    if user_count <= max_user_messages:
+        return [], messages
+
+    older_messages = messages[:split_index]
+    recent_messages = messages[split_index:]
+
+    return older_messages, recent_messages
+
+def build_context_message_text(
+    animal_type: Optional[str],
+    case_summary_text: str,
+    image_observations: Optional[Dict[str, Any]] = None,
+) -> str:
+
+    config = load_prompt_config()
+    sections = config["userPrompt"]["sections"]
+    closing_instructions = config["userPrompt"]["closingInstructions"]
+
+    image_text = build_image_observation_text(image_observations)
+
+    return "\n".join(
+        [
+            "Backend context for this livestock health conversation:",
+            "",
+            f"{sections['animalType']}:",
+            clean_text(animal_type) if animal_type else "unknown",
+            "",
+            f"{sections['caseSummary']}:",
+            case_summary_text,
+            "",
+            f"{sections['imageObservations']}:",
+            image_text,
+            "",
+            "Decision checklist:",
+            "- Check whether animal type is already available.",
+            "- Check whether symptoms are already available.",
+            "- Check whether symptom duration is already available.",
+            "- Check whether eating/drinking status is already available.",
+            "- If animal type, symptoms, and useful health context are already available, return medical.",
+            "- Do not ask again for information already provided in the conversation.",
+            "",
+            *closing_instructions,
+        ]
+    )
 
 def infer_animal_type(message: str, chat_history: Optional[List[Dict[str, str]]] = None, animal_type: Optional[str] = None,) -> str:
     
@@ -581,6 +671,9 @@ def infer_animal_type(message: str, chat_history: Optional[List[Dict[str, str]]]
 
     combined_text = " ".join(combined_text_parts).lower()
 
+    """
+        Todo: move this to aiconfig
+    """
     animal_keywords = {
         "goat": ["goat", "bakri", "bakra"],
         "cow": ["cow", "gai", "gaaye"],

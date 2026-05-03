@@ -163,7 +163,6 @@ def main() -> None:
         try:
             response = generate_livestock_response(
                 message=user_input,
-                animal_type=None,
                 chat_history=chat_history,
                 image_observations=None,
             )

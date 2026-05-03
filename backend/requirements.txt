@@ -6,3 +6,4 @@ pydantic
 groq
 python-dotenv
 pytest
+python-multipart==0.0.20

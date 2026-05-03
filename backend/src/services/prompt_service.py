@@ -139,6 +139,8 @@ def build_groq_messages(
         }
     ]
 
+    context_message = None 
+    
     if older_messages:
         case_summary_text = build_case_summary_text(
             older_messages=older_messages,

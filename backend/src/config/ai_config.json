@@ -1,0 +1,239 @@
+{
+  "groq": {
+    "maxAttempts": 3,
+    "maxOutputTokens": 1200,
+    "temperature": {
+      "firstAttempt": 0.2,
+      "retryAttempt": 0.0
+    },
+    "responseFormat": {
+      "type": "json_object"
+    }
+  },
+  "validation": {
+    "validResponseTypes": [
+      "medical",
+      "non_medical",
+      "false_input"
+    ],
+    "validSeverityLevels": [
+      "low",
+      "medium",
+      "urgent"
+    ],
+    "requiredNonMedicalFields": [
+      "responseType",
+      "chatReply",
+      "missingInfo",
+      "questions",
+      "safeNote"
+    ],
+    "requiredMedicalFields": [
+      "responseType",
+      "severity",
+      "possibleConditions",
+      "chatReply",
+      "careSteps",
+      "treatmentPlan",
+      "disclaimer"
+    ],
+    "requiredTreatmentPlanFields": [
+      "immediateCare",
+      "supportiveCare",
+      "whenToCallVet",
+      "monitoringChecklist",
+      "followUpQuestions"
+    ],
+    "requiredNonEmptyTreatmentFields": [
+      "immediateCare",
+      "supportiveCare",
+      "whenToCallVet",
+      "monitoringChecklist",
+      "followUpQuestions"
+    ]
+  },
+  "logging": {
+    "enabledByDefault": true,
+    "logDirectory": "logs",
+    "groqLogFile": "groq_api_logs.jsonl"
+  },
+  "contextValidation": {
+    "animalKeywords": [
+      "goat",
+      "cow",
+      "buffalo",
+      "sheep",
+      "chicken",
+      "camel",
+      "calf",
+      "bakri",
+      "bakra",
+      "gai",
+      "gaaye",
+      "bhains",
+      "bhed",
+      "murghi",
+      "oont",
+      "bachra"
+    ],
+    "symptomKeywords": [
+      "mouth blisters",
+      "mouth blister",
+      "blisters",
+      "blister",
+      "mouth sores",
+      "lesions",
+      "fever",
+      "bukhar",
+      "drooling",
+      "saliva",
+      "diarrhea",
+      "loose motion",
+      "dast",
+      "limping",
+      "lame",
+      "weak",
+      "weakness",
+      "kamzor",
+      "cough",
+      "coughing",
+      "khansi",
+      "swelling",
+      "soojan",
+      "discharge",
+      "not eating",
+      "not drinking",
+      "dehydration",
+      "sunken eyes",
+      "dry mouth",
+      "breathing",
+      "fast breathing",
+      "saans"
+    ],
+    "durationKeywords": [
+      "since yesterday",
+      "from yesterday",
+      "since today",
+      "since morning",
+      "from morning",
+      "for 1 day",
+      "for one day",
+      "for 2 days",
+      "for two days",
+      "2 days",
+      "two days",
+      "for 3 days",
+      "for three days",
+      "3 days",
+      "three days",
+      "kal se",
+      "subah se",
+      "aaj se",
+      "ek din",
+      "2 din",
+      "3 din"
+    ],
+    "eatingDrinkingKeywords": [
+      "not eating",
+      "not drinking",
+      "not eating or drinking",
+      "not eating at all",
+      "not drinking at all",
+      "eating less",
+      "drinking less",
+      "eating much less",
+      "drinking much less",
+      "loss of appetite",
+      "lack of appetite",
+      "not feeding",
+      "khana nahi",
+      "khana nai",
+      "khana nahi kha",
+      "khana nai kha",
+      "pani nahi",
+      "pani nai",
+      "pani nahi pee",
+      "pani nai pee",
+      "bilkul khana nahi",
+      "bilkul pani nahi"
+    ],
+    "urgentKeywords": [
+      "not eating or drinking",
+      "not eating at all",
+      "not drinking at all",
+      "severe weakness",
+      "extremely weak",
+      "unable to stand",
+      "struggling to stand",
+      "difficulty breathing",
+      "fast breathing",
+      "severe diarrhea",
+      "severe watery diarrhea",
+      "dehydration",
+      "sunken eyes",
+      "dry mouth",
+      "very high fever",
+      "bleeding",
+      "rapid worsening",
+      "condition worsened",
+      "mouth blisters with drooling"
+    ],
+    "weakPossibleConditionTerms": [
+        "mouth blisters",
+        "mouth blister",
+        "blisters",
+        "blister",
+        "fever",
+        "bukhar",
+        "not eating",
+        "eating less",
+        "loss of appetite",
+        "not drinking",
+        "drinking less",
+        "drooling",
+        "saliva",
+        "diarrhea",
+        "dast",
+        "limping",
+        "weakness",
+        "weak"
+        ],
+    "vagueSymptomTerms": [
+      "sick",
+      "ill",
+      "unwell",
+      "not well",
+      "bemar",
+      "bimar",
+      "tabiyat kharab"
+    ],
+    "missingInfoMatchers": {
+      "animalType": [
+        "animal type",
+        "what animal",
+        "type of animal",
+        "which animal"
+      ],
+      "symptoms": [
+        "symptom",
+        "symptoms",
+        "main symptoms",
+        "what signs"
+      ],
+      "duration": [
+        "duration",
+        "when",
+        "start",
+        "started",
+        "how long"
+      ],
+      "eatingDrinking": [
+        "eating",
+        "drinking",
+        "appetite",
+        "water intake",
+        "food intake"
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+supabase>=2.0.0
+python-dotenv
+fastapi
+uvicorn
+pydantic
+groq
+python-dotenv
+pytest

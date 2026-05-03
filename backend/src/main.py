@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from src.routes.chat import router as chat_router
 from src.routes.outbreak import router as outbreak_router
+from src.routes.vets import router as vets_router
 
 
 logging.basicConfig(
@@ -19,6 +20,7 @@ app = FastAPI(
 
 app.include_router(chat_router)
 app.include_router(outbreak_router)
+app.include_router(vets_router)
 
 
 

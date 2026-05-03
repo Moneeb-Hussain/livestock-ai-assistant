@@ -5,11 +5,19 @@ import { usePathname } from "next/navigation";
 import { CasesProvider } from "@/providers/cases-provider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
-import { isTreatmentPlanRoute, ShellMainArea } from "@/components/layout/ShellMainArea";
+import {
+  isNearbyVetsRoute,
+  isOutbreakAlertsRoute,
+  isTreatmentPlanRoute,
+  ShellMainArea,
+} from "@/components/layout/ShellMainArea";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
-  const hideCaseChrome = isTreatmentPlanRoute(pathname);
+  const hideCaseChrome =
+    isTreatmentPlanRoute(pathname) ||
+    isOutbreakAlertsRoute(pathname) ||
+    isNearbyVetsRoute(pathname);
 
   return (
     <CasesProvider>

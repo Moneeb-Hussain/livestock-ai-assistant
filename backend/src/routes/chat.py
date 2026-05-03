@@ -42,7 +42,12 @@ async def chat(
 
     except Exception as exc:
         logger.error("Chat request failed: %s", exc, exc_info=True)
-        return error("Service is temporarily unavailable. Please try again.", 503)
+        # Not Render infra — any failure in AI/vision path is surfaced as JSON (check Render logs for full traceback).
+        return error(
+            "Chat failed on the server. Check API logs (e.g. Groq key, model, or vision config).",
+            500,
+            details={"error_type": type(exc).__name__},
+        )
 
 @router.get("/health")
 async def chat_health() -> JSONResponse:

@@ -28,6 +28,7 @@ import {
   requestOutbreakCoordinates,
   reverseGeocodeLabel,
 } from "@/lib/outbreak-location";
+import { MessageCircle } from "lucide-react";
 import { useCases } from "@/providers/cases-provider";
 
 const MAX_IMAGES = 1;
@@ -480,10 +481,29 @@ export function ChatView() {
       >
         <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-6">
           {messages.length === 0 && !loading ? (
-            <p className="text-center text-sm text-neutral-500">
-              Describe your animal&apos;s symptoms to get guidance. This is not a
-              substitute for a veterinarian.
-            </p>
+            <div className="flex min-h-[min(480px,50dvh)] w-full flex-col items-center justify-center px-2 py-8 sm:min-h-[min(520px,45dvh)] sm:py-12">
+              <div className="w-full max-w-md rounded-2xl border border-neutral-200/90 bg-white px-6 py-9 text-center shadow-card sm:px-8 sm:py-10">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-muted text-brand">
+                  <MessageCircle className="h-7 w-7" strokeWidth={1.75} aria-hidden />
+                </div>
+                <h2 className="mt-6 text-lg font-semibold tracking-tight text-neutral-900 sm:text-xl">
+                  Describe your animal&apos;s symptoms
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+                  Type what you see in plain language. You&apos;ll get cautious,
+                  practical guidance — not a diagnosis.
+                </p>
+                <div className="mt-6 border-t border-neutral-100 pt-6">
+                  <p className="text-xs leading-relaxed text-neutral-500">
+                    <span className="font-semibold text-neutral-600">
+                      Not a substitute for a vet.
+                    </span>{" "}
+                    For exams, diagnosis, and treatment, contact a qualified
+                    veterinarian — urgently if the animal is very unwell.
+                  </p>
+                </div>
+              </div>
+            </div>
           ) : null}
           {messages.map((m) =>
             m.role === "user" ? (

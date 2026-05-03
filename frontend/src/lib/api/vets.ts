@@ -11,7 +11,5 @@ export async function searchNearbyVets(
       ? { radius_km: String(params.radiusKm) }
       : {}),
   });
-  return apiFetch<VetResult[]>(`/api/vets?${q.toString()}`, {
-    method: "GET",
-  });
+  return apiFetch<VetResult[]>(`/api/vets?${q.toString()}`, { method: "GET" });
 }

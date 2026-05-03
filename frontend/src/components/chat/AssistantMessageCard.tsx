@@ -7,7 +7,7 @@ type Props = {
   data: NormalizedChatResponse;
   time: string;
   caseId: string | null;
-  onReportOutbreak: () => Promise<void>;
+  onReportOutbreak: () => void | Promise<void>;
   reporting: boolean;
 };
 
@@ -128,6 +128,7 @@ export function AssistantMessageCard({
                 type="button"
                 disabled={reporting || !canReportOutbreak}
                 onClick={() => void onReportOutbreak()}
+                title="You’ll see a short explanation, then your browser will ask for location—or you can type your area if you block it."
                 className={cn(
                   "inline-flex flex-1 items-center justify-center rounded-xl border-2 border-brand",
                   "bg-white px-3 py-2 text-center text-sm font-semibold text-brand",

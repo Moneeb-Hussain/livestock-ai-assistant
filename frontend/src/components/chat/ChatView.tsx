@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, reportOutbreakSignal, sendChatMessage } from "@/lib/api";
+import type { OutbreakReportPayload } from "@/lib/api/types";
 import {
   isAutoCaseLabel,
   newTurnId,
@@ -12,11 +13,21 @@ import {
 } from "@/lib/thread-format";
 import { AssistantMessageCard } from "@/components/chat/AssistantMessageCard";
 import {
+  OutbreakLocationFallbackDialog,
+  type OutbreakLocationDraft,
+} from "@/components/chat/OutbreakLocationFallbackDialog";
+import { OutbreakLocationPrimerDialog } from "@/components/chat/OutbreakLocationPrimerDialog";
+import {
   ChatComposer,
   type PendingChatImage,
 } from "@/components/chat/ChatComposer";
 import { ChatTypingIndicator } from "@/components/chat/ChatTypingIndicator";
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble";
+import {
+  queryGeolocationPermission,
+  requestOutbreakCoordinates,
+  reverseGeocodeLabel,
+} from "@/lib/outbreak-location";
 import { useCases } from "@/providers/cases-provider";
 
 const MAX_IMAGES = 1;
@@ -91,6 +102,15 @@ export function ChatView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportingId, setReportingId] = useState<string | null>(null);
+  const [outbreakLocationDraft, setOutbreakLocationDraft] =
+    useState<OutbreakLocationDraft | null>(null);
+  const [outbreakPrimerDraft, setOutbreakPrimerDraft] =
+    useState<OutbreakLocationDraft | null>(null);
+  const [outbreakPrimerBusy, setOutbreakPrimerBusy] = useState(false);
+  /** Chrome already blocked this origin — show reset instructions instead of expecting a prompt. */
+  const [outbreakPrimerChromeBlockedHelp, setOutbreakPrimerChromeBlockedHelp] =
+    useState(false);
+  const outbreakPrimerContinueRef = useRef<() => Promise<void>>(async () => {});
   /** Data URLs for user turns in this session only (not persisted — avoids localStorage quota). */
   const [liveUserImages, setLiveUserImages] = useState<Record<string, string[]>>({});
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -259,32 +279,201 @@ export function ChatView() {
     setThreadForCase,
   ]);
 
+  const submitOutbreakReport = useCallback(async (payload: OutbreakReportPayload) => {
+    await reportOutbreakSignal(payload);
+  }, []);
+
   const handleReport = useCallback(
-    async (msg: Extract<ChatUiMessage, { role: "assistant" }>) => {
+    (msg: Extract<ChatUiMessage, { role: "assistant" }>) => {
       if (!activeCaseId || msg.data.responseType !== "medical") return;
-      setReportingId(msg.id);
       setError(null);
-      try {
-        await reportOutbreakSignal({
-          caseId: activeCaseId,
-          possibleConditions: msg.data.possibleConditions,
-          severity: msg.data.severity,
+      const lastUser = [...activeThread].reverse().find((t) => t.role === "user");
+      const userSnippet =
+        lastUser?.role === "user"
+          ? lastUser.content.replace(/\s+/g, " ").replace(/,/g, ";").trim().slice(0, 240)
+          : "";
+      const conditionParts = (msg.data.possibleConditions ?? [])
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const symptomParts = [...conditionParts];
+      if (userSnippet) symptomParts.push(`user_note:${userSnippet}`);
+      const symptomSummary = symptomParts.length ? symptomParts.join(",") : "unspecified";
+
+      const base: OutbreakReportPayload = {
+        caseId: activeCaseId,
+        caseLabel: activeCase?.label,
+        animalType: activeCase?.animalType,
+        symptomSummary,
+        possibleConditions: msg.data.possibleConditions,
+        severity: msg.data.severity,
+      };
+
+      setReportingId(msg.id);
+      setOutbreakPrimerChromeBlockedHelp(false);
+      setOutbreakPrimerDraft({
+        assistantMessageId: msg.id,
+        payload: base,
+      });
+    },
+    [activeCase?.animalType, activeCase?.label, activeCaseId, activeThread],
+  );
+
+  const handleOutbreakPrimerCancel = useCallback(() => {
+    setOutbreakPrimerDraft(null);
+    setOutbreakPrimerBusy(false);
+    setOutbreakPrimerChromeBlockedHelp(false);
+    setReportingId(null);
+  }, []);
+
+  const handleOutbreakPrimerContinue = useCallback(async () => {
+    if (!outbreakPrimerDraft) return;
+    setOutbreakPrimerBusy(true);
+    setError(null);
+    const { payload, assistantMessageId } = outbreakPrimerDraft;
+    try {
+      const perm = await queryGeolocationPermission();
+      if (perm === "denied") {
+        setOutbreakPrimerChromeBlockedHelp(true);
+        return;
+      }
+
+      const result = await requestOutbreakCoordinates({ timeoutMs: 15_000 });
+      if (result.ok) {
+        const { latitude, longitude } = result.coords;
+        let locationName =
+          (await reverseGeocodeLabel(latitude, longitude)) ?? undefined;
+        if (!locationName?.trim()) {
+          locationName = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+        }
+        await submitOutbreakReport({
+          ...payload,
+          latitude,
+          longitude,
+          locationName,
         });
+        setOutbreakPrimerDraft(null);
+        setOutbreakPrimerChromeBlockedHelp(false);
+        setReportingId(null);
+        return;
+      }
+
+      if (result.reason === "permission_denied") {
+        setOutbreakPrimerChromeBlockedHelp(true);
+        return;
+      }
+
+      setOutbreakPrimerDraft(null);
+      setOutbreakPrimerChromeBlockedHelp(false);
+      setReportingId(null);
+      setOutbreakLocationDraft({ assistantMessageId, payload });
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setError(e.message);
+      } else {
+        setError("Could not submit outbreak report.");
+      }
+      setOutbreakPrimerDraft(null);
+      setOutbreakPrimerChromeBlockedHelp(false);
+      setReportingId(null);
+    } finally {
+      setOutbreakPrimerBusy(false);
+    }
+  }, [outbreakPrimerDraft, submitOutbreakReport]);
+
+  useEffect(() => {
+    outbreakPrimerContinueRef.current = handleOutbreakPrimerContinue;
+  }, [handleOutbreakPrimerContinue]);
+
+  const handleOutbreakPrimerTryAgainAfterUnblock = useCallback(async () => {
+    setOutbreakPrimerChromeBlockedHelp(false);
+    await outbreakPrimerContinueRef.current();
+  }, []);
+
+  const handleOutbreakPrimerEnterAreaManually = useCallback(() => {
+    if (!outbreakPrimerDraft) return;
+    const { payload, assistantMessageId } = outbreakPrimerDraft;
+    setOutbreakPrimerDraft(null);
+    setOutbreakPrimerChromeBlockedHelp(false);
+    setOutbreakPrimerBusy(false);
+    setReportingId(null);
+    setOutbreakLocationDraft({ assistantMessageId, payload });
+  }, [outbreakPrimerDraft]);
+
+  const handleOutbreakLocationDialogClose = useCallback(() => {
+    setOutbreakLocationDraft(null);
+    setReportingId(null);
+  }, []);
+
+  const handleOutbreakManualLocation = useCallback(
+    async (locationName: string): Promise<boolean> => {
+      if (!outbreakLocationDraft) return false;
+      try {
+        await submitOutbreakReport({
+          ...outbreakLocationDraft.payload,
+          locationName: locationName.trim(),
+        });
+        setOutbreakLocationDraft(null);
+        setReportingId(null);
+        return true;
       } catch (e) {
         if (e instanceof ApiError) {
           setError(e.message);
         } else {
           setError("Could not submit outbreak report.");
         }
-      } finally {
-        setReportingId(null);
+        return false;
       }
     },
-    [activeCaseId],
+    [outbreakLocationDraft, submitOutbreakReport],
   );
+
+  const handleOutbreakRetryGeo = useCallback(async (): Promise<boolean> => {
+    if (!outbreakLocationDraft) return false;
+    const result = await requestOutbreakCoordinates({ timeoutMs: 15_000 });
+    if (!result.ok) return false;
+    const { latitude, longitude } = result.coords;
+    let locationName =
+      (await reverseGeocodeLabel(latitude, longitude)) ?? undefined;
+    if (!locationName?.trim()) {
+      locationName = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+    }
+    try {
+      await submitOutbreakReport({
+        ...outbreakLocationDraft.payload,
+        latitude,
+        longitude,
+        locationName,
+      });
+      setOutbreakLocationDraft(null);
+      setReportingId(null);
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setError(e.message);
+      } else {
+        setError("Could not submit outbreak report.");
+      }
+      return false;
+    }
+  }, [outbreakLocationDraft, submitOutbreakReport]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <OutbreakLocationPrimerDialog
+        open={outbreakPrimerDraft !== null}
+        busy={outbreakPrimerBusy}
+        showChromeBlockedHelp={outbreakPrimerChromeBlockedHelp}
+        onCancel={handleOutbreakPrimerCancel}
+        onContinue={handleOutbreakPrimerContinue}
+        onTryAgainAfterUnblock={handleOutbreakPrimerTryAgainAfterUnblock}
+        onEnterAreaManually={handleOutbreakPrimerEnterAreaManually}
+      />
+      <OutbreakLocationFallbackDialog
+        draft={outbreakLocationDraft}
+        onClose={handleOutbreakLocationDialogClose}
+        onSubmitManual={handleOutbreakManualLocation}
+        onRetryGeo={handleOutbreakRetryGeo}
+      />
       <div
         ref={scrollAreaRef}
         className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-6"
@@ -310,7 +499,10 @@ export function ChatView() {
                 data={m.data}
                 time={m.time}
                 caseId={activeCaseId}
-                reporting={reportingId === m.id}
+                reporting={
+                  reportingId === m.id ||
+                  (outbreakPrimerDraft?.assistantMessageId === m.id && outbreakPrimerBusy)
+                }
                 onReportOutbreak={() => handleReport(m)}
               />
             ),

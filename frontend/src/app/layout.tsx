@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { AppToaster } from "@/components/AppToaster";
 import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body className="font-sans">
+        <AppToaster />
         <AppShell>{children}</AppShell>
       </body>
     </html>

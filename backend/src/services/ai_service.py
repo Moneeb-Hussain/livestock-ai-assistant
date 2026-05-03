@@ -57,7 +57,6 @@ GROQ_LOG_FILE = LOG_DIR / LOGGING_CONFIG["groqLogFile"]
 
 def generate_livestock_response(
     message: str,
-    animal_type: Optional[str] = None,
     image_observations: Optional[Dict[str, Any]] = None,
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
@@ -71,6 +70,8 @@ def generate_livestock_response(
     - Retry up to configured max attempts.
     - Return fallback if all attempts fail.
     """
+    animal_type: Optional[str] = None
+
     system_prompt = get_system_prompt()
     base_messages = build_groq_messages(system_prompt=system_prompt,message=message,animal_type=animal_type,image_observations=image_observations,chat_history=chat_history)
     last_error: Optional[Exception] = None

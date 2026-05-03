@@ -126,7 +126,6 @@ def test_case_1_text_symptoms():
             "My goat has fever and mouth blisters since yesterday. "
             "It is not eating and is drooling."
         ),
-        animal_type="goat",
         chat_history=[],
         image_observations=None,
     )
@@ -138,7 +137,6 @@ def test_case_1_text_symptoms():
 def test_case_2_missing_info():
     response = generate_livestock_response(
         message="My animal is sick.",
-        animal_type=None,
         chat_history=[],
         image_observations=None,
     )
@@ -150,7 +148,6 @@ def test_case_2_missing_info():
 def test_case_3_with_image_observations():
     response = generate_livestock_response(
         message="My goat has fever and is not eating since yesterday.",
-        animal_type="goat",
         chat_history=[],
         image_observations={
             "visibleSymptoms": ["mouth blisters", "drooling"],
@@ -181,7 +178,6 @@ def test_case_4_long_chat_history_summary():
 
     response = generate_livestock_response(
         message="Now it is also limping and looks weak.",
-        animal_type="goat",
         chat_history=chat_history,
         image_observations=None,
     )

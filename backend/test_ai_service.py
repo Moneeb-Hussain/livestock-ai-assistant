@@ -178,7 +178,6 @@ def test_generate_livestock_response_with_mocked_medical_response(monkeypatch):
 
     result = generate_livestock_response(
         message="My goat has fever and mouth blisters since yesterday. It is not eating.",
-        animal_type="goat",
         chat_history=[],
         image_observations=None,
     )
@@ -210,7 +209,6 @@ def test_generate_livestock_response_with_mocked_non_medical_response(monkeypatc
 
     result = generate_livestock_response(
         message="My animal is sick.",
-        animal_type=None,
         chat_history=[],
         image_observations=None,
     )
@@ -247,7 +245,6 @@ def test_generate_livestock_response_retries_and_returns_valid_response(monkeypa
 
     result = generate_livestock_response(
         message="My goat is sick.",
-        animal_type="goat",
         chat_history=[],
         image_observations=None,
     )
@@ -264,7 +261,6 @@ def test_generate_livestock_response_returns_fallback_after_failed_retries(monke
 
     result = generate_livestock_response(
         message="My animal is sick.",
-        animal_type=None,
         chat_history=[],
         image_observations=None,
     )

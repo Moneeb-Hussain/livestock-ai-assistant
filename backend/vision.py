@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from backend.services.vision_service import analyze_image
+from backend.src.services.vision_service import analyze_image
 
 app = FastAPI(title="Vision AI Service")
 

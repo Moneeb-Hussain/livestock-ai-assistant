@@ -157,21 +157,19 @@ def build_groq_messages(
                 "content": context_message,
             }
         )
-    # else:
-    #     context_message = build_context_message_text(
-    #         animal_type=animal_type,
-    #         case_summary_text="none",
-    #         image_observations=image_observations,
-    #     )
-
-        messages.append(
-            {
-                "role": "user",
-                "content": context_message,
-            }
+    elif image_observations:
+        context_message = build_image_text(
+            image_observations=image_observations,
         )
 
-    for item in recent_messages:
+        # messages.append(
+        #     {
+        #         "role": "user",
+        #         "content": context_message,
+        #     }
+        # )
+
+    for index, item in enumerate(recent_messages):
         role = normalize_role(item.get("role", "user"))
         content = clean_text(item.get("content", ""))
 
@@ -179,13 +177,22 @@ def build_groq_messages(
             role = "user"
 
         if content:
+            if (index == 0 and role == "user" and context_message):
+                content = "\n".join(
+                    [
+                        content,
+                        "",
+                        "Image observations for this conversation:",
+                        context_message,
+                    ]
+                )
+
             messages.append(
                 {
                     "role": role,
                     "content": content,
                 }
             )
-
     return messages
 
 def format_examples(title: str, examples: List[Dict[str, Any]]) -> str:
@@ -633,7 +640,7 @@ def build_context_message_text(
 
     return "\n".join(
         [
-            "Backend context for this livestock health conversation:",
+            "Context:",
             "",
             f"{sections['animalType']}:",
             clean_text(animal_type) if animal_type else "unknown",
@@ -645,14 +652,31 @@ def build_context_message_text(
             image_text,
             "",
             "Decision checklist:",
-            "- Check whether animal type is already available.",
-            "- Check whether symptoms are already available.",
-            "- Check whether symptom duration is already available.",
-            "- Check whether eating/drinking status is already available.",
-            "- If animal type, symptoms, and useful health context are already available, return medical.",
-            "- Do not ask again for information already provided in the conversation.",
+            "Check whether animal type is already available.",
+            "Check whether symptoms are already available.",
+            "Check whether symptom duration is already available.",
+            "Check whether eating/drinking status is already available.",
+            "If animal type, symptoms, and useful health context are already available, return medical.",
+            "Do not ask again for information already provided in the conversation.",
             "",
             *closing_instructions,
+        ]
+    )
+
+def build_image_text(
+    image_observations: Optional[Dict[str, Any]] = None,
+) -> str:
+
+    config = load_prompt_config()
+    sections = config["userPrompt"]["sections"]
+    image_text = build_image_observation_text(image_observations)
+
+    return "\n".join(
+        [
+            "Image Observations:",
+            "",
+            f"{sections['imageObservations']}:",
+            image_text,
         ]
     )
 

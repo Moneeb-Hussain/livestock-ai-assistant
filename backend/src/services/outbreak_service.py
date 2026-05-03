@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from backend.src.db.connection import supabase
+from src.db.connection import supabase
 
 
 def save_outbreak_report(data: dict):
@@ -48,7 +48,7 @@ def check_and_create_alert(animal_type: str, symptom_group: str, location_name: 
 
     case_count = len(matched_cases)
 
-    if case_count >= 5:
+    if case_count >= 2:
         risk_level = "confirmed" if case_count >= 10 else "likely" if case_count >= 7 else "possible"
 
         # check if alert already exists

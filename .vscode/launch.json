@@ -2,10 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug MaweshiAI Console",
+      "name": "Debug MaweshiAI FastAPI",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/backend/console_chatbot.py",
+      "module": "uvicorn",
+      "args": [
+        "src.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/backend",
       "env": {

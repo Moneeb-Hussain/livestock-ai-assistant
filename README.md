@@ -1,48 +1,34 @@
-# 🐄 Livestock Vision Service
+# Maweshi AI (livestock-ai-assistant)
 
-This service performs **strict visual analysis of animal images** and returns structured observations for downstream processing.
+Monorepo for **Maweshi AI**: a livestock health assistant focused on Pakistani livestock diseases—chat, treatment guidance, outbreak signals, and optional nearby vets (per architecture spec).
 
-It is designed as a **low-level perception module** in a livestock health pipeline.
+## Layout
+
+| Path | Role |
+|------|------|
+| `frontend/` | React + Vite + Tailwind: chat, treatment plan, outbreak alerts, case UI, API client |
+| `backend/` | FastAPI app: `/api/chat`, `/api/cases`, `/api/outbreaks`, optional `/api/vets` |
+| `ai-services/` | Text / vision / audio pipelines (prompts, model clients)—integrate with or call from backend |
+| `db/` | Supabase/PostgreSQL migrations and seeds (`outbreak_reports`, `outbreak_alerts`, etc.) |
+
+## Target stack (MVP)
+
+- **Frontend:** React, Vite, Tailwind, React Router, Axios or TanStack Query  
+- **Backend:** Python FastAPI  
+- **Database:** Supabase PostgreSQL  
+- **AI:** Hugging Face Inference (text/vision); browser or server speech as needed  
+- **Maps:** Browser geolocation + OpenStreetMap / Nominatim / Overpass (vet search); optional **Leaflet** + free tile/OSM for map UI
+
+## Backend source shape
+
+- `backend/src/routes/` — HTTP route modules  
+- `backend/src/services/` — business logic (cases, outbreaks, AI orchestration)  
+- `backend/src/validators/` — request/response validation  
+- `backend/src/db/models/` — data models / DB access helpers  
+- `backend/src/utils/` — safety, response shaping, helpers  
+
+Application entrypoint (e.g. `main.py`) will live under `backend/src/` when the API is scaffolded.
 
 ---
 
-## 🚀 Features
-
-- Image upload handling (FastAPI)
-- Vision model integration (Gemini)
-- Strict visible symptom extraction (no hallucination)
-- Structured JSON output (fixed schema)
-- Input validation (file type, size)
-- Output sanitization (type-safe, filtered)
-- Robust error handling with safe fallbacks
-
----
-
-## 🧠 What this service does
-
-### Input
-- Animal image (required)
-
-### Output (STRICT FORMAT)
-
-```json
-{
-  "visibleSymptoms": ["..."],
-  "confidence": 0.0,
-  "imageSummary": "...",
-  "warning": null
-}
-```
-### Example JSON Response
-```
-{
-  "visibleSymptoms": [
-    "patches of hair loss",
-    "reddened skin areas",
-    "crusted lesions"
-  ],
-  "confidence": 0.72,
-  "imageSummary": "A brown livestock animal is shown from the side with multiple visible skin abnormalities. Several areas of hair loss expose reddened skin, and crusted lesions are scattered across the torso. The animal appears under natural lighting with a partially visible background.",
-  "warning": "Partial visibility of animal"
-}
-
+Document reference: [Maweshi AI App architecture](https://docs.google.com/document/d/1DQssetF3gWAMZX3xntW3tD0Y7nIHcaf9WvqzRqlI4y4/edit).

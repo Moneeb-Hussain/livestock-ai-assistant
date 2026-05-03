@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api/client";
 import type { ChatHistoryItem, NormalizedChatResponse } from "@/lib/api/types";
+import { appConfig } from "@/lib/config";
 
 type SendChatParams = {
   message: string;
@@ -7,19 +8,9 @@ type SendChatParams = {
   imageFile?: File | null;
 };
 
-/**
- * If `NEXT_PUBLIC_API_BASE_URL` is set, POST directly to that host (needs CORS on the API).
- * Otherwise POST to the Next.js rewrite at `/api/maweshi-proxy/chat` (same origin → no CORS).
- */
+/** POST directly to FastAPI `/api/chat` (see `appConfig.apiBaseUrl`; backend must allow CORS). */
 function chatUrl(): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
-  if (base) {
-    return `${base}/api/chat`;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/api/maweshi-proxy/chat`;
-  }
-  return "/api/maweshi-proxy/chat";
+  return `${appConfig.apiBaseUrl}/api/chat`;
 }
 
 function normalizeChatPayload(raw: Record<string, unknown>): NormalizedChatResponse {
@@ -114,12 +105,19 @@ export async function sendChatMessage(
   const body = json as Record<string, unknown>;
 
   if (!res.ok) {
-    const msg =
+    let msg =
       typeof body.message === "string"
         ? body.message
         : typeof body.detail === "string"
           ? body.detail
           : res.statusText || "Request failed";
+    const details = body.details;
+    if (details && typeof details === "object" && details !== null) {
+      const et = (details as Record<string, unknown>).error_type;
+      if (typeof et === "string" && et.length > 0) {
+        msg = `${msg} (${et})`;
+      }
+    }
     throw new ApiError(msg, res.status, body);
   }
 

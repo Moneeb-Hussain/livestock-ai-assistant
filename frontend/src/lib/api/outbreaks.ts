@@ -7,19 +7,6 @@ import type {
 import { parseOutbreakAlertRow } from "@/lib/outbreak-alerts";
 
 /**
- * When `NEXT_PUBLIC_API_BASE_URL` is set, call that host (FastAPI must allow CORS).
- * Otherwise use the Next.js rewrite (same origin as chat — see `next.config.mjs`).
- */
-function outbreakApiAbsoluteUrl(): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
-  if (base) return `${base}/api/outbreaks`;
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/api/maweshi-proxy/outbreaks`;
-  }
-  return "/api/maweshi-proxy/outbreaks";
-}
-
-/**
  * Best-effort animal type from a case title (e.g. "Goat — fever") when `animalType`
  * is not set on the case.
  */
@@ -68,26 +55,19 @@ function outbreakReportToApiBody(p: OutbreakReportPayload): Record<string, unkno
 export async function reportOutbreakSignal(
   payload: OutbreakReportPayload,
 ): Promise<OutbreakReportResult> {
-  const absoluteUrl = outbreakApiAbsoluteUrl();
-  return apiFetch<OutbreakReportResult>(
-    "/api/outbreaks",
-    {
-      method: "POST",
-      body: outbreakReportToApiBody(payload),
-    },
-    { absoluteUrl },
-  );
+  return apiFetch<OutbreakReportResult>("/api/outbreaks", {
+    method: "POST",
+    body: outbreakReportToApiBody(payload),
+  });
 }
 
 export async function fetchOutbreakAlerts(): Promise<{
   success: boolean;
   alerts: OutbreakAlertRow[];
 }> {
-  const absoluteUrl = outbreakApiAbsoluteUrl();
   const res = await apiFetch<{ success?: boolean; alerts?: unknown[] }>(
     "/api/outbreaks",
     { method: "GET" },
-    { absoluteUrl },
   );
   const alerts = (res.alerts ?? [])
     .map((row) => parseOutbreakAlertRow(row))

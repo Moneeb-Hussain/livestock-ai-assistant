@@ -28,12 +28,13 @@ function formatCaseLabel(date: Date) {
   });
 }
 
+/** Stable seed data — do not use `new Date()` here (SSR vs client would mismatch). */
 const initialCases: CaseSummary[] = [
   {
     id: "case-1",
-    label: `Goat — fever & blisters (${formatCaseLabel(new Date())})`,
+    label: "Goat — fever & blisters",
     animalType: "goat",
-    updatedAt: new Date().toISOString(),
+    updatedAt: "2024-01-15T12:00:00.000Z",
   },
 ];
 

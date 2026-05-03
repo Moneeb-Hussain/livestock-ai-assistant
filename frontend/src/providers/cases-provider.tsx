@@ -70,7 +70,11 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loaded = loadWorkspace();
     if (loaded) {
-      setWorkspace(loaded);
+      if (loaded.cases.length === 0) {
+        setWorkspace(createEmptyWorkspace());
+      } else {
+        setWorkspace(loaded);
+      }
     }
     setPersistReady(true);
   }, []);
@@ -93,12 +97,21 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       label: `New case — ${formatCaseLabel(new Date())}`,
       updatedAt: now,
     };
-    setWorkspace((prev) => ({
-      ...prev,
-      activeCaseId: id,
-      cases: [nextCase, ...prev.cases],
-      threads: { ...prev.threads, [id]: [] },
-    }));
+    setWorkspace((prev) => {
+      const keptCases = prev.cases.filter(
+        (c) => (prev.threads[c.id] ?? []).length > 0,
+      );
+      const threads: Record<string, PersistedChatItem[]> = {};
+      for (const c of keptCases) {
+        threads[c.id] = prev.threads[c.id] ?? [];
+      }
+      return {
+        ...prev,
+        activeCaseId: id,
+        cases: [nextCase, ...keptCases],
+        threads: { ...threads, [id]: [] },
+      };
+    });
   }, []);
 
   const setThreadForCase = useCallback((caseId: string, thread: PersistedChatItem[]) => {

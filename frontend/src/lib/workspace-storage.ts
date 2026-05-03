@@ -14,6 +14,22 @@ export type WorkspaceV2 = {
   threads: Record<string, PersistedChatItem[]>;
 };
 
+/** Cases with no messages are omitted so empty “New case” drafts are not persisted. */
+export function workspaceForPersistence(workspace: WorkspaceV2): WorkspaceV2 {
+  const kept = workspace.cases.filter(
+    (c) => (workspace.threads[c.id] ?? []).length > 0,
+  );
+  const threads: Record<string, PersistedChatItem[]> = {};
+  for (const c of kept) {
+    threads[c.id] = workspace.threads[c.id] ?? [];
+  }
+  let activeCaseId = workspace.activeCaseId;
+  if (!activeCaseId || !kept.some((c) => c.id === activeCaseId)) {
+    activeCaseId = kept[0]?.id ?? null;
+  }
+  return { version: 2, activeCaseId, cases: kept, threads };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -64,7 +80,6 @@ function parseWorkspaceV2(raw: unknown): WorkspaceV2 | null {
     const c = parseCaseSummary(item);
     if (c) cases.push(c);
   }
-  if (cases.length === 0) return null;
   const threads: Record<string, PersistedChatItem[]> = {};
   if (isRecord(raw.threads)) {
     for (const [caseId, list] of Object.entries(raw.threads)) {
@@ -77,16 +92,28 @@ function parseWorkspaceV2(raw: unknown): WorkspaceV2 | null {
       threads[caseId] = row;
     }
   }
-  let activeCaseId: string | null = null;
-  if (typeof raw.activeCaseId === "string" && cases.some((c) => c.id === raw.activeCaseId)) {
-    activeCaseId = raw.activeCaseId;
-  } else {
-    activeCaseId = cases[0].id;
-  }
   for (const c of cases) {
     if (!threads[c.id]) threads[c.id] = [];
   }
-  return { version: 2, activeCaseId, cases, threads };
+  /** Never surface case rows with no persisted turns (cleans older saves that listed empty cases). */
+  const casesWithMessages = cases.filter((c) => (threads[c.id] ?? []).length > 0);
+  const trimmedThreads: Record<string, PersistedChatItem[]> = {};
+  for (const c of casesWithMessages) {
+    trimmedThreads[c.id] = threads[c.id] ?? [];
+  }
+  if (casesWithMessages.length === 0) {
+    return { version: 2, activeCaseId: null, cases: [], threads: {} };
+  }
+  let activeCaseId: string | null = null;
+  if (
+    typeof raw.activeCaseId === "string" &&
+    casesWithMessages.some((c) => c.id === raw.activeCaseId)
+  ) {
+    activeCaseId = raw.activeCaseId;
+  } else {
+    activeCaseId = casesWithMessages[0].id;
+  }
+  return { version: 2, activeCaseId, cases: casesWithMessages, threads: trimmedThreads };
 }
 
 type LegacyUiMessage =
@@ -245,7 +272,12 @@ export function loadWorkspace(): WorkspaceV2 | null {
 export function saveWorkspace(workspace: WorkspaceV2): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+    const toSave = workspaceForPersistence(workspace);
+    if (toSave.cases.length === 0) {
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(toSave));
   } catch {
     /* quota / private mode */
   }

@@ -24,12 +24,17 @@ export function TopBar() {
             )}
             value={activeCaseId ?? ""}
             onChange={(e) => setActiveCaseId(e.target.value)}
+            disabled={cases.length === 0}
           >
-            {cases.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
+            {cases.length === 0 ? (
+              <option value="">No saved cases yet</option>
+            ) : (
+              cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))
+            )}
           </select>
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400">
             ▾

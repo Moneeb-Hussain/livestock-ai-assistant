@@ -1,5 +1,7 @@
 import type { ChatHistoryItem, NormalizedChatResponse } from "@/lib/api/types";
 
+const TITLE_MAX = 52;
+
 /** One turn persisted for a case (localStorage). Assistant `content` is JSON of the full API payload. */
 export type PersistedChatItem =
   | {
@@ -100,13 +102,32 @@ export function threadToApiChatHistory(thread: PersistedChatItem[]): ChatHistory
   return out;
 }
 
-const TITLE_MAX = 52;
-
 export function threadTitleFromFirstUserMessage(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
   if (!line) return "Image message";
   const cut = line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1).trimEnd()}…` : line;
   return cut;
+}
+
+/** Case list title from the assistant reply (summary), not the user’s first line. */
+export function threadTitleFromAssistantSummary(data: NormalizedChatResponse): string {
+  const raw = data.chatReply.replace(/\s+/g, " ").trim();
+  const firstLine =
+    data.chatReply
+      .split(/\n/)
+      .map((s) => s.replace(/\s+/g, " ").trim())
+      .find(Boolean) ?? "";
+  const line = firstLine || raw;
+  if (line) {
+    return line.length > TITLE_MAX
+      ? `${line.slice(0, TITLE_MAX - 1).trimEnd()}…`
+      : line;
+  }
+  if (data.responseType === "medical" && data.possibleConditions[0]) {
+    const p = data.possibleConditions[0].replace(/\s+/g, " ").trim();
+    return p.length > TITLE_MAX ? `${p.slice(0, TITLE_MAX - 1).trimEnd()}…` : p;
+  }
+  return "Consult update";
 }
 
 export function isAutoCaseLabel(label: string): boolean {

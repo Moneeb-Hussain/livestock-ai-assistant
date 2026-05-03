@@ -5,7 +5,7 @@ import { ApiError, reportOutbreakSignal, sendChatMessage } from "@/lib/api";
 import {
   isAutoCaseLabel,
   newTurnId,
-  threadTitleFromFirstUserMessage,
+  threadTitleFromAssistantSummary,
   threadToApiChatHistory,
   threadToUiMessages,
   type ChatUiMessage,
@@ -200,16 +200,11 @@ export function ChatView() {
       ...(snapshot.length > 0 ? { imageCount: snapshot.length } : {}),
     };
 
-    const rename =
-      activeCase && isAutoCaseLabel(activeCase.label) && prior.length === 0
-        ? threadTitleFromFirstUserMessage(displayText)
-        : undefined;
-
     if (imageDataUrls?.length) {
       setLiveUserImages((prev) => ({ ...prev, [userTurn.id]: imageDataUrls }));
     }
 
-    appendToThread(activeCaseId, [userTurn], rename ? { newLabel: rename } : undefined);
+    appendToThread(activeCaseId, [userTurn]);
     setLoading(true);
 
     try {
@@ -224,7 +219,15 @@ export function ChatView() {
         time: timeNow(),
         content: JSON.stringify(data),
       };
-      appendToThread(activeCaseId, [assistantTurn]);
+      const titleFromSummary =
+        activeCase && isAutoCaseLabel(activeCase.label)
+          ? threadTitleFromAssistantSummary(data)
+          : undefined;
+      appendToThread(
+        activeCaseId,
+        [assistantTurn],
+        titleFromSummary ? { newLabel: titleFromSummary } : undefined,
+      );
     } catch (e) {
       setInput(text);
       if (snapshot.length) {

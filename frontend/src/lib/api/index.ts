@@ -10,6 +10,8 @@ export type {
   ChatRequest,
   ChatResponse,
   ChatRole,
+  MaweshiResponseType,
+  NormalizedChatResponse,
   OutbreakReportPayload,
   VetResult,
   VetSearchParams,

@@ -19,13 +19,24 @@ export type ChatRequest = {
   caseId?: string;
 };
 
-export type ChatResponse = {
-  severity: "low" | "moderate" | "urgent" | string;
+export type MaweshiResponseType = "medical" | "non_medical" | "false_input";
+
+/** Normalized assistant payload for UI (all branches). */
+export type NormalizedChatResponse = {
+  responseType: MaweshiResponseType;
+  severity?: string;
   possibleConditions: string[];
   chatReply: string;
   careSteps: string[];
   disclaimer: string;
+  questions?: string[];
+  safeNote?: string;
+  reason?: string;
+  treatmentPlan?: Record<string, string[]>;
 };
+
+/** @deprecated Use NormalizedChatResponse */
+export type ChatResponse = NormalizedChatResponse;
 
 export type CaseSummary = {
   id: string;

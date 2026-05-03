@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, reportOutbreakSignal, sendChatMessage } from "@/lib/api";
-import type { ChatAttachment, ChatHistoryItem, ChatResponse } from "@/lib/api/types";
+import {
+  isAutoCaseLabel,
+  newTurnId,
+  threadTitleFromFirstUserMessage,
+  threadToApiChatHistory,
+  threadToUiMessages,
+  type ChatUiMessage,
+} from "@/lib/thread-format";
 import { AssistantMessageCard } from "@/components/chat/AssistantMessageCard";
 import {
   ChatComposer,
@@ -11,29 +18,8 @@ import {
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble";
 import { useCases } from "@/providers/cases-provider";
 
-const SYSTEM_PROMPT: ChatHistoryItem = {
-  role: "system",
-  content:
-    "You are MaweshiAI, a livestock health assistant. Give safe, cautious guidance and recommend a vet for serious symptoms.",
-};
-
 const MAX_IMAGES = 1;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-type UiMessage =
-  | {
-      id: string;
-      role: "user";
-      text: string;
-      time: string;
-      images?: string[];
-    }
-  | {
-      id: string;
-      role: "assistant";
-      time: string;
-      data: ChatResponse;
-    };
 
 function timeNow() {
   return new Date().toLocaleTimeString(undefined, {
@@ -89,69 +75,39 @@ function mergePendingImages(
   return { next, notice };
 }
 
-const demoAssistant: ChatResponse = {
-  severity: "urgent",
-  possibleConditions: [
-    "Foot and mouth disease",
-    "Mouth infection",
-    "PPR possibility",
-  ],
-  chatReply:
-    "یہ علامات سنگین ہو سکتی ہیں۔ بخار، منہ کے چھالے اور بھوک نہ لگنا مل کر کسی متعدی بیماری کی نشاندہی کر سکتے ہیں۔ براہ کرم جانور کو فوری طور پر الگ کریں اور قریبی ویٹرنری سے رابطہ کریں۔",
-  careSteps: [
-    "Isolate the animal from the herd",
-    "Provide clean water and soft feed if the animal can swallow",
-    "Gently rinse the mouth with clean water if advised by a vet",
-    "Monitor temperature and contact a vet if it rises or the animal stops drinking",
-  ],
-  disclaimer:
-    "This is general guidance, not a veterinary diagnosis. Always consult a qualified veterinarian.",
-};
-
-function seedMessages(caseId: string | null): UiMessage[] {
-  if (caseId === "case-1") {
-    return [
-      {
-        id: "m1",
-        role: "user",
-        text: "My goat has fever and blisters in the mouth since this morning. It is not eating.",
-        time: "10:24 AM",
-      },
-      {
-        id: "m2",
-        role: "assistant",
-        time: "10:24 AM",
-        data: demoAssistant,
-      },
-    ];
-  }
-  return [];
-}
-
 export function ChatView() {
-  const { activeCaseId } = useCases();
-  const [byCase, setByCase] = useState<Record<string, UiMessage[]>>(() => ({
-    "case-1": seedMessages("case-1"),
-  }));
+  const {
+    activeCaseId,
+    activeCase,
+    activeThread,
+    appendToThread,
+    setThreadForCase,
+  } = useCases();
+
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportingId, setReportingId] = useState<string | null>(null);
+  /** Data URLs for user turns in this session only (not persisted — avoids localStorage quota). */
+  const [liveUserImages, setLiveUserImages] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    setError(null);
+    setLiveUserImages({});
+  }, [activeCaseId]);
 
   const messages = useMemo(() => {
     if (!activeCaseId) return [];
-    return byCase[activeCaseId] ?? [];
-  }, [activeCaseId, byCase]);
-
-  useEffect(() => {
-    if (!activeCaseId) return;
-    setByCase((prev) => {
-      if (prev[activeCaseId]) return prev;
-      return { ...prev, [activeCaseId]: seedMessages(activeCaseId) };
+    const base = threadToUiMessages(activeThread);
+    return base.map((m) => {
+      if (m.role !== "user") return m;
+      const extra = liveUserImages[m.id];
+      if (!extra?.length) return m;
+      return { ...m, images: extra };
     });
-  }, [activeCaseId]);
+  }, [activeCaseId, activeThread, liveUserImages]);
 
   const appendTranscript = useCallback((text: string) => {
     setInput((v) => (v ? `${v.trimEnd()} ` : "") + text);
@@ -177,49 +133,6 @@ export function ChatView() {
     setComposerNotice(null);
   }, []);
 
-  const buildHistory = useCallback(
-    (prior: UiMessage[], nextUserText: string): ChatHistoryItem[] => {
-      const tail: ChatHistoryItem[] = prior.flatMap((m): ChatHistoryItem[] => {
-        if (m.role === "user") {
-          const extra = m.images?.length
-            ? `[User attached ${m.images.length} image(s) in the app.]`
-            : "";
-          return [
-            {
-              role: "user",
-              content: extra ? `${m.text}\n${extra}` : m.text,
-            },
-          ];
-        }
-        return [
-          {
-            role: "assistant",
-            content: [
-              m.data.chatReply,
-              ...m.data.careSteps.map((s) => `• ${s}`),
-            ].join("\n"),
-          },
-        ];
-      });
-      return [
-        SYSTEM_PROMPT,
-        ...tail,
-        { role: "user", content: nextUserText },
-      ];
-    },
-    [],
-  );
-
-  const appendMessages = useCallback(
-    (caseId: string, msgs: UiMessage[]) => {
-      setByCase((prev) => ({
-        ...prev,
-        [caseId]: [...(prev[caseId] ?? []), ...msgs],
-      }));
-    },
-    [],
-  );
-
   const handleSend = useCallback(async () => {
     const text = input.trim();
     const snapshot = pendingImages.map((p) => ({
@@ -235,7 +148,6 @@ export function ChatView() {
     setError(null);
     setComposerNotice(null);
 
-    let attachments: ChatAttachment[] = [];
     let imageDataUrls: string[] | undefined;
 
     if (snapshot.length > 0) {
@@ -243,12 +155,6 @@ export function ChatView() {
         snapshot.map((s) => readFileAsDataUrl(s.file)),
       );
       imageDataUrls = dataUrls;
-      attachments = snapshot.map((s, i) => ({
-        id: s.id,
-        mimeType: s.file.type || "image/jpeg",
-        name: s.file.name,
-        url: dataUrls[i],
-      }));
     }
 
     const displayText =
@@ -261,75 +167,83 @@ export function ChatView() {
     setPendingImages([]);
     setInput("");
 
-    const userMsg: UiMessage = {
-      id: `u-${Date.now()}`,
-      role: "user",
-      text: displayText,
+    const prior = activeThread;
+    const chatHistory = threadToApiChatHistory(prior);
+
+    const imageFile = snapshot[0]?.file ?? null;
+    const message =
+      text.trim() ||
+      (snapshot.length
+        ? "Please review the attached livestock image(s)."
+        : "");
+
+    const userTurn = {
+      id: newTurnId("u"),
+      role: "user" as const,
+      content: displayText,
       time: timeNow(),
-      images: imageDataUrls,
+      ...(snapshot.length > 0 ? { imageCount: snapshot.length } : {}),
     };
 
-    const existing = byCase[activeCaseId] ?? [];
-    const historyText =
-      displayText +
-      (attachments.length
-        ? `\n[${attachments.length} image(s) attached for the assistant.]`
-        : "");
-    const chatHistory = buildHistory(existing, historyText);
+    const rename =
+      activeCase && isAutoCaseLabel(activeCase.label) && prior.length === 0
+        ? threadTitleFromFirstUserMessage(displayText)
+        : undefined;
 
-    appendMessages(activeCaseId, [userMsg]);
+    if (imageDataUrls?.length) {
+      setLiveUserImages((prev) => ({ ...prev, [userTurn.id]: imageDataUrls }));
+    }
+
+    appendToThread(activeCaseId, [userTurn], rename ? { newLabel: rename } : undefined);
     setLoading(true);
 
     try {
       const data = await sendChatMessage({
-        message: text || "Please review the attached livestock image(s).",
-        attachments,
+        message,
         chatHistory,
-        caseId: activeCaseId,
+        imageFile,
       });
-      const assistantMsg: UiMessage = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
+      const assistantTurn = {
+        id: newTurnId("a"),
+        role: "assistant" as const,
         time: timeNow(),
-        data,
+        content: JSON.stringify(data),
       };
-      appendMessages(activeCaseId, [assistantMsg]);
+      appendToThread(activeCaseId, [assistantTurn]);
     } catch (e) {
       setInput(text);
-      setPendingImages(
-        snapshot.map((s) => ({
-          id: s.id,
-          file: s.file,
-          previewUrl: URL.createObjectURL(s.file),
-        })),
-      );
+      if (snapshot.length) {
+        setPendingImages(
+          snapshot.map((s) => ({
+            id: s.id,
+            file: s.file,
+            previewUrl: URL.createObjectURL(s.file),
+          })),
+        );
+      }
       if (e instanceof ApiError) {
         setError(e.message);
       } else {
         setError("Something went wrong. Please try again.");
       }
-      setByCase((prev) => ({
-        ...prev,
-        [activeCaseId]: (prev[activeCaseId] ?? []).filter(
-          (m) => m.id !== userMsg.id,
-        ),
-      }));
+      setThreadForCase(activeCaseId, prior);
     } finally {
       setLoading(false);
     }
   }, [
+    activeCase,
     activeCaseId,
-    appendMessages,
-    buildHistory,
-    byCase,
+    activeThread,
+    appendToThread,
     input,
     loading,
     pendingImages,
+    setThreadForCase,
   ]);
 
   const handleReport = useCallback(
-    async (msg: Extract<UiMessage, { role: "assistant" }>) => {
-      if (!activeCaseId) return;
+    async (msg: Extract<ChatUiMessage, { role: "assistant" }>) => {
+      if (!activeCaseId || msg.data.responseType !== "medical") return;
       setReportingId(msg.id);
       setError(null);
       try {
@@ -355,6 +269,12 @@ export function ChatView() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
+          {messages.length === 0 && !loading ? (
+            <p className="text-center text-sm text-neutral-500">
+              Describe your animal&apos;s symptoms to get guidance. This is not a
+              substitute for a veterinarian.
+            </p>
+          ) : null}
           {messages.map((m) =>
             m.role === "user" ? (
               <UserMessageBubble

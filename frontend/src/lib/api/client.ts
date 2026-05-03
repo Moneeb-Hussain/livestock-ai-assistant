@@ -36,13 +36,14 @@ export async function apiFetch<T>(
   const data = text ? safeJsonParse(text) : null;
 
   if (!res.ok) {
-    throw new ApiError(
-      typeof data === "object" && data && "detail" in data
-        ? String((data as { detail: unknown }).detail)
-        : res.statusText || "Request failed",
-      res.status,
-      data,
-    );
+    const obj = typeof data === "object" && data ? (data as Record<string, unknown>) : null;
+    const msg =
+      obj && typeof obj.message === "string"
+        ? obj.message
+        : obj && "detail" in obj
+          ? String(obj.detail)
+          : res.statusText || "Request failed";
+    throw new ApiError(msg, res.status, data);
   }
 
   return data as T;

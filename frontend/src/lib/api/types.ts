@@ -63,6 +63,18 @@ export type OutbreakReportPayload = {
   language?: string;
 };
 
+/** Row from Supabase `outbreak_alerts` (GET + realtime). */
+export type OutbreakAlertRow = {
+  id: string;
+  animal_type: string;
+  symptom_group: string;
+  location_name: string | null;
+  case_count: number;
+  risk_level: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 /** POST `/api/outbreaks` success shape from FastAPI + `outbreak_service`. */
 export type OutbreakReportResult = {
   success: boolean;

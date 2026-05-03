@@ -1,5 +1,10 @@
 import { apiFetch } from "@/lib/api/client";
-import type { OutbreakReportPayload, OutbreakReportResult } from "@/lib/api/types";
+import type {
+  OutbreakAlertRow,
+  OutbreakReportPayload,
+  OutbreakReportResult,
+} from "@/lib/api/types";
+import { parseOutbreakAlertRow } from "@/lib/outbreak-alerts";
 
 /**
  * When `NEXT_PUBLIC_API_BASE_URL` is set, call that host (FastAPI must allow CORS).
@@ -76,8 +81,16 @@ export async function reportOutbreakSignal(
 
 export async function fetchOutbreakAlerts(): Promise<{
   success: boolean;
-  alerts: unknown[];
+  alerts: OutbreakAlertRow[];
 }> {
   const absoluteUrl = outbreakApiAbsoluteUrl();
-  return apiFetch("/api/outbreaks", { method: "GET" }, { absoluteUrl });
+  const res = await apiFetch<{ success?: boolean; alerts?: unknown[] }>(
+    "/api/outbreaks",
+    { method: "GET" },
+    { absoluteUrl },
+  );
+  const alerts = (res.alerts ?? [])
+    .map((row) => parseOutbreakAlertRow(row))
+    .filter((r): r is OutbreakAlertRow => r !== null);
+  return { success: Boolean(res.success), alerts };
 }

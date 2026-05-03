@@ -36,6 +36,8 @@ type CasesContextValue = {
     turns: PersistedChatItem[],
     options?: { newLabel?: string },
   ) => void;
+  /** After a successful outbreak POST for this case; persists in workspace (one report per chat). */
+  markOutbreakReportSubmitted: (caseId: string) => void;
 };
 
 const CasesContext = createContext<CasesContextValue | null>(null);
@@ -151,6 +153,15 @@ export function CasesProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const markOutbreakReportSubmitted = useCallback((caseId: string) => {
+    setWorkspace((prev) => ({
+      ...prev,
+      cases: prev.cases.map((c) =>
+        c.id === caseId ? { ...c, outbreakReportSubmitted: true } : c,
+      ),
+    }));
+  }, []);
+
   const value = useMemo<CasesContextValue>(() => {
     const activeCaseId = workspace.activeCaseId;
     const activeThread =
@@ -167,6 +178,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       activeThread,
       setThreadForCase,
       appendToThread,
+      markOutbreakReportSubmitted,
     };
   }, [
     workspace,
@@ -174,6 +186,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
     createCase,
     setThreadForCase,
     appendToThread,
+    markOutbreakReportSubmitted,
   ]);
 
   return <CasesContext.Provider value={value}>{children}</CasesContext.Provider>;

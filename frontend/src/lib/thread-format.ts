@@ -2,6 +2,9 @@ import type { ChatHistoryItem, NormalizedChatResponse } from "@/lib/api/types";
 
 const TITLE_MAX = 52;
 
+/** Max images stored per user turn (matches chat composer limit). */
+const MAX_PERSISTED_IMAGES_PER_TURN = 4;
+
 /** One turn persisted for a case (localStorage). Assistant `content` is JSON of the full API payload. */
 export type PersistedChatItem =
   | {
@@ -10,6 +13,8 @@ export type PersistedChatItem =
       content: string;
       time: string;
       imageCount?: number;
+      /** `data:image/...;base64,...` from the sender — shown again when the thread is reloaded. */
+      imageDataUrls?: string[];
     }
   | {
       id: string;
@@ -102,6 +107,35 @@ export function threadToApiChatHistory(thread: PersistedChatItem[]): ChatHistory
   return out;
 }
 
+/**
+ * User + assistant wording from the thread so outbreak `animal_type` can match the animal
+ * discussed in chat (goat, cow, …), not a generic default.
+ */
+export function threadExcerptForAnimalInference(
+  thread: PersistedChatItem[],
+  maxLen = 12_000,
+): string {
+  const parts: string[] = [];
+  for (const m of thread) {
+    if (m.role === "user") {
+      const t = m.content.trim();
+      if (t) parts.push(t);
+      continue;
+    }
+    const d = parseAssistantPayload(m.content);
+    if (!d) continue;
+    const reply = d.chatReply.trim();
+    if (reply) parts.push(reply);
+    const conds = (d.possibleConditions ?? [])
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (conds.length) parts.push(conds.join(", "));
+  }
+  let s = parts.join("\n").replace(/\s+/g, " ").trim();
+  if (s.length <= maxLen) return s;
+  return s.slice(-maxLen);
+}
+
 export function threadTitleFromFirstUserMessage(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
   if (!line) return "Image message";
@@ -151,11 +185,30 @@ export function parsePersistedChatItem(value: unknown): PersistedChatItem | null
   if (typeof value.time !== "string") return null;
   if (value.role === "user") {
     if (typeof value.content !== "string") return null;
+    let imageDataUrls: string[] | undefined;
+    if (Array.isArray(value.imageDataUrls)) {
+      const urls = value.imageDataUrls.filter(
+        (u): u is string =>
+          typeof u === "string" && u.startsWith("data:image/") && u.length < 15_000_000,
+      );
+      if (urls.length > 0) {
+        imageDataUrls = urls.slice(0, MAX_PERSISTED_IMAGES_PER_TURN);
+      }
+    }
     const imageCount =
       typeof value.imageCount === "number" && value.imageCount > 0
         ? value.imageCount
-        : undefined;
-    return { id: value.id, role: "user", content: value.content, time: value.time, imageCount };
+        : imageDataUrls?.length && imageDataUrls.length > 0
+          ? imageDataUrls.length
+          : undefined;
+    return {
+      id: value.id,
+      role: "user",
+      content: value.content,
+      time: value.time,
+      ...(imageCount ? { imageCount } : {}),
+      ...(imageDataUrls?.length ? { imageDataUrls } : {}),
+    };
   }
   if (value.role === "assistant" && typeof value.content === "string") {
     return { id: value.id, role: "assistant", content: value.content, time: value.time };
@@ -178,10 +231,13 @@ export type ChatUiMessage =
       data: NormalizedChatResponse;
     };
 
-function imageStorageHint(count: number): string {
+/** Older image-only turns stored this as `content`; hide it when we have thumbnails. */
+const LEGACY_IMAGE_ONLY_CAPTION = /^\s*\[\d+ images? attached\]\s*$/i;
+
+function legacyImageHint(count: number): string {
   return count === 1
-    ? "1 image was sent; the preview is not kept in browser storage."
-    : `${count} images were sent; previews are not kept in browser storage.`;
+    ? "1 image was sent earlier; preview was not saved in this workspace version."
+    : `${count} images were sent earlier; previews were not saved in this workspace version.`;
 }
 
 /** Render thread in the chat UI (assistant JSON → structured card). */
@@ -195,10 +251,23 @@ export function threadToUiMessages(thread: PersistedChatItem[]): ChatUiMessage[]
       }
       continue;
     }
+    const storedImages = m.imageDataUrls?.filter(Boolean);
+    if (storedImages && storedImages.length > 0) {
+      const raw = m.content.trim();
+      const text = LEGACY_IMAGE_ONLY_CAPTION.test(raw) ? "" : m.content;
+      row.push({
+        id: m.id,
+        role: "user",
+        text,
+        time: m.time,
+        images: storedImages,
+      });
+      continue;
+    }
     let text = m.content;
     if (m.imageCount && m.imageCount > 0) {
-      const hint = imageStorageHint(m.imageCount);
-      if (!text.includes("not kept in browser storage")) {
+      const hint = legacyImageHint(m.imageCount);
+      if (!text.includes("workspace version")) {
         text = text.trim() ? `${text.trim()}\n${hint}` : hint;
       }
     }

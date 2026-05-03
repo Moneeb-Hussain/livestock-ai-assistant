@@ -6,6 +6,7 @@ import type { OutbreakReportPayload } from "@/lib/api/types";
 import {
   isAutoCaseLabel,
   newTurnId,
+  threadExcerptForAnimalInference,
   threadTitleFromAssistantSummary,
   threadToApiChatHistory,
   threadToUiMessages,
@@ -29,10 +30,21 @@ import {
   reverseGeocodeLabel,
 } from "@/lib/outbreak-location";
 import { MessageCircle } from "lucide-react";
+import { toast } from "sonner";
 import { useCases } from "@/providers/cases-provider";
 
 const MAX_IMAGES = 1;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function notifyOutbreakReportSuccess() {
+  toast.success("Outbreak report submitted", {
+    description: "Thank you — your report was saved and may appear on the outbreak map.",
+  });
+}
+
+function notifyOutbreakReportFailure(message: string) {
+  toast.error("Outbreak report failed", { description: message });
+}
 
 function timeNow() {
   return new Date().toLocaleTimeString(undefined, {
@@ -95,6 +107,7 @@ export function ChatView() {
     activeThread,
     appendToThread,
     setThreadForCase,
+    markOutbreakReportSubmitted,
   } = useCases();
 
   const [input, setInput] = useState("");
@@ -112,26 +125,17 @@ export function ChatView() {
   const [outbreakPrimerChromeBlockedHelp, setOutbreakPrimerChromeBlockedHelp] =
     useState(false);
   const outbreakPrimerContinueRef = useRef<() => Promise<void>>(async () => {});
-  /** Data URLs for user turns in this session only (not persisted — avoids localStorage quota). */
-  const [liveUserImages, setLiveUserImages] = useState<Record<string, string[]>>({});
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setError(null);
-    setLiveUserImages({});
   }, [activeCaseId]);
 
   const messages = useMemo(() => {
     if (!activeCaseId) return [];
-    const base = threadToUiMessages(activeThread);
-    return base.map((m) => {
-      if (m.role !== "user") return m;
-      const extra = liveUserImages[m.id];
-      if (!extra?.length) return m;
-      return { ...m, images: extra };
-    });
-  }, [activeCaseId, activeThread, liveUserImages]);
+    return threadToUiMessages(activeThread);
+  }, [activeCaseId, activeThread]);
 
   useLayoutEffect(() => {
     const root = scrollAreaRef.current;
@@ -193,11 +197,8 @@ export function ChatView() {
       imageDataUrls = dataUrls;
     }
 
-    const displayText =
-      text ||
-      (snapshot.length
-        ? `[${snapshot.length} image${snapshot.length > 1 ? "s" : ""} attached]`
-        : "");
+    /** Image-only turns: no caption above the grid (API still gets `message` below). */
+    const displayText = text;
 
     snapshot.forEach((s) => URL.revokeObjectURL(s.previewUrl));
     setPendingImages([]);
@@ -218,12 +219,10 @@ export function ChatView() {
       role: "user" as const,
       content: displayText,
       time: timeNow(),
-      ...(snapshot.length > 0 ? { imageCount: snapshot.length } : {}),
+      ...(snapshot.length > 0 && imageDataUrls?.length
+        ? { imageCount: snapshot.length, imageDataUrls }
+        : {}),
     };
-
-    if (imageDataUrls?.length) {
-      setLiveUserImages((prev) => ({ ...prev, [userTurn.id]: imageDataUrls }));
-    }
 
     appendToThread(activeCaseId, [userTurn]);
     setLoading(true);
@@ -287,6 +286,7 @@ export function ChatView() {
   const handleReport = useCallback(
     (msg: Extract<ChatUiMessage, { role: "assistant" }>) => {
       if (!activeCaseId || msg.data.responseType !== "medical") return;
+      if (activeCase?.outbreakReportSubmitted) return;
       setError(null);
       const lastUser = [...activeThread].reverse().find((t) => t.role === "user");
       const userSnippet =
@@ -304,6 +304,7 @@ export function ChatView() {
         caseId: activeCaseId,
         caseLabel: activeCase?.label,
         animalType: activeCase?.animalType,
+        chatExcerptForAnimal: threadExcerptForAnimalInference(activeThread),
         symptomSummary,
         possibleConditions: msg.data.possibleConditions,
         severity: msg.data.severity,
@@ -316,7 +317,13 @@ export function ChatView() {
         payload: base,
       });
     },
-    [activeCase?.animalType, activeCase?.label, activeCaseId, activeThread],
+    [
+      activeCase?.animalType,
+      activeCase?.label,
+      activeCase?.outbreakReportSubmitted,
+      activeCaseId,
+      activeThread,
+    ],
   );
 
   const handleOutbreakPrimerCancel = useCallback(() => {
@@ -352,6 +359,8 @@ export function ChatView() {
           longitude,
           locationName,
         });
+        markOutbreakReportSubmitted(payload.caseId);
+        notifyOutbreakReportSuccess();
         setOutbreakPrimerDraft(null);
         setOutbreakPrimerChromeBlockedHelp(false);
         setReportingId(null);
@@ -368,18 +377,17 @@ export function ChatView() {
       setReportingId(null);
       setOutbreakLocationDraft({ assistantMessageId, payload });
     } catch (e) {
-      if (e instanceof ApiError) {
-        setError(e.message);
-      } else {
-        setError("Could not submit outbreak report.");
-      }
+      const msg =
+        e instanceof ApiError ? e.message : "Could not submit outbreak report.";
+      setError(msg);
+      notifyOutbreakReportFailure(msg);
       setOutbreakPrimerDraft(null);
       setOutbreakPrimerChromeBlockedHelp(false);
       setReportingId(null);
     } finally {
       setOutbreakPrimerBusy(false);
     }
-  }, [outbreakPrimerDraft, submitOutbreakReport]);
+  }, [markOutbreakReportSubmitted, outbreakPrimerDraft, submitOutbreakReport]);
 
   useEffect(() => {
     outbreakPrimerContinueRef.current = handleOutbreakPrimerContinue;
@@ -413,19 +421,20 @@ export function ChatView() {
           ...outbreakLocationDraft.payload,
           locationName: locationName.trim(),
         });
+        markOutbreakReportSubmitted(outbreakLocationDraft.payload.caseId);
+        notifyOutbreakReportSuccess();
         setOutbreakLocationDraft(null);
         setReportingId(null);
         return true;
       } catch (e) {
-        if (e instanceof ApiError) {
-          setError(e.message);
-        } else {
-          setError("Could not submit outbreak report.");
-        }
+        const msg =
+          e instanceof ApiError ? e.message : "Could not submit outbreak report.";
+        setError(msg);
+        notifyOutbreakReportFailure(msg);
         return false;
       }
     },
-    [outbreakLocationDraft, submitOutbreakReport],
+    [markOutbreakReportSubmitted, outbreakLocationDraft, submitOutbreakReport],
   );
 
   const handleOutbreakRetryGeo = useCallback(async (): Promise<boolean> => {
@@ -445,18 +454,19 @@ export function ChatView() {
         longitude,
         locationName,
       });
+      markOutbreakReportSubmitted(outbreakLocationDraft.payload.caseId);
+      notifyOutbreakReportSuccess();
       setOutbreakLocationDraft(null);
       setReportingId(null);
       return true;
     } catch (e) {
-      if (e instanceof ApiError) {
-        setError(e.message);
-      } else {
-        setError("Could not submit outbreak report.");
-      }
+      const msg =
+        e instanceof ApiError ? e.message : "Could not submit outbreak report.";
+      setError(msg);
+      notifyOutbreakReportFailure(msg);
       return false;
     }
-  }, [outbreakLocationDraft, submitOutbreakReport]);
+  }, [markOutbreakReportSubmitted, outbreakLocationDraft, submitOutbreakReport]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -519,6 +529,7 @@ export function ChatView() {
                 data={m.data}
                 time={m.time}
                 caseId={activeCaseId}
+                outbreakAlreadyReported={Boolean(activeCase?.outbreakReportSubmitted)}
                 reporting={
                   reportingId === m.id ||
                   (outbreakPrimerDraft?.assistantMessageId === m.id && outbreakPrimerBusy)

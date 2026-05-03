@@ -40,7 +40,14 @@ function parseCaseSummary(value: unknown): CaseSummary | null {
   if (typeof value.updatedAt !== "string") return null;
   const animalType =
     typeof value.animalType === "string" ? value.animalType : undefined;
-  return { id: value.id, label: value.label, updatedAt: value.updatedAt, animalType };
+  const outbreakReportSubmitted = value.outbreakReportSubmitted === true;
+  return {
+    id: value.id,
+    label: value.label,
+    updatedAt: value.updatedAt,
+    animalType,
+    ...(outbreakReportSubmitted ? { outbreakReportSubmitted: true } : {}),
+  };
 }
 
 function isNormalizedChatResponse(value: unknown): value is NormalizedChatResponse {
@@ -135,13 +142,17 @@ function legacyUiToThread(messages: LegacyUiMessage[]): PersistedChatItem[] {
   const out: PersistedChatItem[] = [];
   for (const m of messages) {
     if (m.role === "user") {
-      const imageCount = m.images?.length ?? 0;
+      const imageDataUrls = (m.images ?? []).filter(
+        (u): u is string =>
+          typeof u === "string" && u.startsWith("data:image/"),
+      );
+      const imageCount = imageDataUrls.length;
       out.push({
         id: m.id.startsWith("u-") ? m.id : newTurnId("u"),
         role: "user",
         content: m.text,
         time: m.time,
-        ...(imageCount > 0 ? { imageCount } : {}),
+        ...(imageCount > 0 ? { imageCount, imageDataUrls } : {}),
       });
       continue;
     }

@@ -9,6 +9,8 @@ type Props = {
   caseId: string | null;
   onReportOutbreak: () => void | Promise<void>;
   reporting: boolean;
+  /** This conversation already had a successful outbreak report (persisted). */
+  outbreakAlreadyReported?: boolean;
 };
 
 export function AssistantMessageCard({
@@ -17,6 +19,7 @@ export function AssistantMessageCard({
   caseId,
   onReportOutbreak,
   reporting,
+  outbreakAlreadyReported = false,
 }: Props) {
   const isMedical = data.responseType === "medical";
   const isFalseInput = data.responseType === "false_input";
@@ -30,7 +33,10 @@ export function AssistantMessageCard({
       : "follow-up";
 
   const canReportOutbreak =
-    isMedical && data.possibleConditions.length > 0 && Boolean(caseId);
+    isMedical &&
+    data.possibleConditions.length > 0 &&
+    Boolean(caseId) &&
+    !outbreakAlreadyReported;
 
   return (
     <div className="flex min-w-0 gap-3">
@@ -128,14 +134,22 @@ export function AssistantMessageCard({
                 type="button"
                 disabled={reporting || !canReportOutbreak}
                 onClick={() => void onReportOutbreak()}
-                title="You’ll see a short explanation, then your browser will ask for location—or you can type your area if you block it."
+                title={
+                  outbreakAlreadyReported
+                    ? "You can only submit one outbreak report per conversation."
+                    : "You’ll see a short explanation, then your browser will ask for location—or you can type your area if you block it."
+                }
                 className={cn(
                   "inline-flex flex-1 items-center justify-center rounded-xl border-2 border-brand",
                   "bg-white px-3 py-2 text-center text-sm font-semibold text-brand",
                   "min-w-[10rem] transition hover:bg-brand-muted disabled:opacity-50",
                 )}
               >
-                {reporting ? "Reporting…" : "Report to outbreak map"}
+                {outbreakAlreadyReported
+                  ? "Already reported"
+                  : reporting
+                    ? "Reporting…"
+                    : "Report to outbreak map"}
               </button>
             </div>
           ) : null}

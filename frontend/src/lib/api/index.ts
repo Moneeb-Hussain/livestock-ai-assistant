@@ -4,6 +4,7 @@ export { createCase, listCases } from "@/lib/api/cases";
 export {
   fetchOutbreakAlerts,
   inferAnimalTypeFromCaseLabel,
+  inferAnimalTypeFromChatText,
   reportOutbreakSignal,
 } from "@/lib/api/outbreaks";
 export { searchNearbyVets } from "@/lib/api/vets";

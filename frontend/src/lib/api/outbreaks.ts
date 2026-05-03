@@ -7,18 +7,34 @@ import type {
 import { parseOutbreakAlertRow } from "@/lib/outbreak-alerts";
 
 /**
- * Best-effort animal type from a case title (e.g. "Goat — fever") when `animalType`
- * is not set on the case.
+ * Ordered rules aligned with backend `infer_animal_type` keywords (first match wins).
  */
+const ANIMAL_TYPE_RULES: { type: string; re: RegExp }[] = [
+  { type: "goat", re: /\b(goats?|bakri|bakra)\b/i },
+  { type: "cow", re: /\b(cows?|cattle|bovine|gai|gaaye)\b/i },
+  { type: "buffalo", re: /\b(buffaloes|buffalo|bhains)\b/i },
+  { type: "sheep", re: /\b(sheep|lambs?|bhed)\b/i },
+  { type: "camel", re: /\b(camels?|oont)\b/i },
+  { type: "chicken", re: /\b(chickens?|murghi|hens?|roosters?)\b/i },
+  { type: "calf", re: /\b(calf|calves|bachra)\b/i },
+];
+
+/**
+ * Infer a concrete animal token from free text (case title, thread excerpt, symptoms).
+ * Returns `"unknown"` when nothing matches — avoids sending generic `"livestock"` when the chat names a species.
+ */
+export function inferAnimalTypeFromChatText(text: string): string {
+  const t = text.trim();
+  if (!t) return "unknown";
+  for (const { type, re } of ANIMAL_TYPE_RULES) {
+    if (re.test(t)) return type;
+  }
+  return "unknown";
+}
+
+/** @deprecated Prefer `inferAnimalTypeFromChatText` with full thread excerpt. */
 export function inferAnimalTypeFromCaseLabel(label: string | undefined): string {
-  if (!label) return "livestock";
-  const lower = label.toLowerCase();
-  if (/\bgoat\b/.test(lower)) return "goat";
-  if (/\bbuffalo\b/.test(lower)) return "buffalo";
-  if (/\b(sheep|lamb)\b/.test(lower)) return "sheep";
-  if (/\b(cow|cattle|bovine)\b/.test(lower)) return "cow";
-  if (/\bcamel\b/.test(lower)) return "camel";
-  return "livestock";
+  return inferAnimalTypeFromChatText(label ?? "");
 }
 
 /**
@@ -32,9 +48,18 @@ function outbreakReportToApiBody(p: OutbreakReportPayload): Record<string, unkno
       ? p.possibleConditions.map((s) => s.trim()).filter(Boolean).join(",")
       : "unspecified");
 
+  const explicitAnimal = p.animalType?.trim();
+  const inferenceBlob = [
+    p.caseLabel,
+    ...(p.possibleConditions ?? []).map((s) => s.trim()).filter(Boolean),
+    (p.symptomSummary && p.symptomSummary.trim()) || "",
+    (p.chatExcerptForAnimal && p.chatExcerptForAnimal.trim()) || "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const animal_type =
-    (p.animalType && p.animalType.trim()) ||
-    inferAnimalTypeFromCaseLabel(p.caseLabel);
+    explicitAnimal || inferAnimalTypeFromChatText(inferenceBlob);
 
   const body: Record<string, unknown> = {
     animal_type,

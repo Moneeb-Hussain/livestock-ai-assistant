@@ -43,6 +43,8 @@ export type CaseSummary = {
   label: string;
   animalType?: string;
   updatedAt: string;
+  /** Local workspace only: outbreak report was submitted once for this chat/case. */
+  outbreakReportSubmitted?: boolean;
 };
 
 /** Client-side fields; `reportOutbreakSignal` maps to backend snake_case body. */
@@ -51,7 +53,9 @@ export type OutbreakReportPayload = {
   caseId: string;
   /** Case title, e.g. "Goat — …", used to infer `animal_type` when `animalType` is missing. */
   caseLabel?: string;
-  /** Required by backend `animal_type`; infer from case label if omitted. */
+  /** User + assistant text from this chat (not sent to API); used to infer goat/cow/etc. */
+  chatExcerptForAnimal?: string;
+  /** If set on the case, sent as `animal_type`; otherwise inferred from label + thread excerpt + symptoms. */
   animalType?: string;
   /** Required by backend `symptom_group` as comma-separated keywords. */
   symptomSummary?: string;

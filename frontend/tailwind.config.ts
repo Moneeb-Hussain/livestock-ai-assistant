@@ -27,6 +27,15 @@ const config: Config = {
       boxShadow: {
         card: "0 1px 2px rgb(0 0 0 / 0.05), 0 0 0 1px rgb(0 0 0 / 0.04)",
       },
+      keyframes: {
+        "chat-dot": {
+          "0%, 100%": { opacity: "0.2", transform: "translateY(0)" },
+          "40%": { opacity: "1", transform: "translateY(-3px)" },
+        },
+      },
+      animation: {
+        "chat-dot": "chat-dot 1s ease-in-out infinite",
+      },
     },
   },
   plugins: [],

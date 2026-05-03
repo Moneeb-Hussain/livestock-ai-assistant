@@ -24,6 +24,8 @@ type CasesContextValue = {
   setActiveCaseId: (id: string) => void;
   createCase: () => void;
   activeCase: CaseSummary | null;
+  /** All case threads keyed by case id (same as localStorage `threads`). */
+  threads: Record<string, PersistedChatItem[]>;
   /** Ordered persisted turns for the active case (canonical storage). */
   activeThread: PersistedChatItem[];
   /** Replace entire thread for a case (e.g. after rollback). */
@@ -148,6 +150,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       setActiveCaseId,
       createCase,
       activeCase: workspace.cases.find((c) => c.id === activeCaseId) ?? null,
+      threads: workspace.threads,
       activeThread,
       setThreadForCase,
       appendToThread,

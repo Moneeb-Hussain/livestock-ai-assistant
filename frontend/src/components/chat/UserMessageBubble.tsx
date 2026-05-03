@@ -10,16 +10,19 @@ type Props = {
 
 export function UserMessageBubble({ text, time, images }: Props) {
   return (
-    <div className="flex justify-end gap-3">
-      <div className="max-w-[min(100%,36rem)] space-y-2">
+    <div className="flex min-w-0 justify-end gap-3">
+      <div className="min-w-0 max-w-[min(100%,36rem)] space-y-2">
         <div
           className={cn(
-            "rounded-2xl rounded-br-md px-4 py-3 text-sm leading-relaxed",
+            "min-w-0 max-w-full rounded-2xl rounded-br-md px-4 py-3 text-sm leading-relaxed",
             "bg-brand-muted text-neutral-900 shadow-sm",
           )}
         >
           {text ? (
-            <p className="whitespace-pre-wrap" dir="auto">
+            <p
+              className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+              dir="auto"
+            >
               {text}
             </p>
           ) : null}

@@ -33,7 +33,7 @@ export function AssistantMessageCard({
     isMedical && data.possibleConditions.length > 0 && Boolean(caseId);
 
   return (
-    <div className="flex gap-3">
+    <div className="flex min-w-0 gap-3">
       {/* eslint-disable-next-line @next/next/no-img-element -- local SVG avatars */}
       <img
         src="/images/cow-avatar.svg"
@@ -42,10 +42,10 @@ export function AssistantMessageCard({
         height={40}
         className="mt-1 h-10 w-10 shrink-0 rounded-full"
       />
-      <div className="max-w-[min(100%,40rem)] flex-1">
-        <div className="overflow-hidden rounded-2xl rounded-bl-md border border-neutral-200 bg-white shadow-card">
-          <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
-            <p className="flex-1 text-sm font-semibold text-neutral-900">
+      <div className="min-w-0 max-w-[min(100%,40rem)] flex-1">
+        <div className="min-w-0 overflow-hidden rounded-2xl rounded-bl-md border border-neutral-200 bg-white shadow-card">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
+            <p className="min-w-0 flex-1 text-sm font-semibold text-neutral-900">
               MaweshiAI
             </p>
             <span
@@ -63,8 +63,8 @@ export function AssistantMessageCard({
             <span className="text-[11px] text-neutral-400">{time}</span>
           </div>
 
-          <div className="space-y-3 px-4 py-3 text-sm leading-relaxed text-neutral-700">
-            <p>{data.chatReply}</p>
+          <div className="min-w-0 space-y-3 break-words px-4 py-3 text-sm leading-relaxed text-neutral-700 [overflow-wrap:anywhere]">
+            <p className="min-w-0">{data.chatReply}</p>
             {data.responseType === "non_medical" &&
             data.questions &&
             data.questions.length > 0 ? (
@@ -72,15 +72,17 @@ export function AssistantMessageCard({
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
                   Questions
                 </p>
-                <ol className="list-decimal space-y-2 pl-5 marker:font-semibold marker:text-brand">
+                <ol className="list-decimal space-y-2 pl-5 marker:font-semibold marker:text-brand [&_li]:min-w-0">
                   {data.questions.map((q, i) => (
-                    <li key={i}>{q}</li>
+                    <li key={i} className="break-words [overflow-wrap:anywhere]">
+                      {q}
+                    </li>
                   ))}
                 </ol>
               </div>
             ) : null}
             {isFalseInput && data.reason ? (
-              <p className="text-xs text-neutral-500">
+              <p className="min-w-0 break-words text-xs text-neutral-500 [overflow-wrap:anywhere]">
                 <span className="font-semibold text-neutral-600">Note: </span>
                 {data.reason}
               </p>
@@ -88,7 +90,9 @@ export function AssistantMessageCard({
             {data.careSteps.length > 0 ? (
               <ol className="list-decimal space-y-2 pl-5 marker:font-semibold marker:text-brand">
                 {data.careSteps.map((step, i) => (
-                  <li key={i}>{step}</li>
+                  <li key={i} className="min-w-0 break-words [overflow-wrap:anywhere]">
+                    {step}
+                  </li>
                 ))}
               </ol>
             ) : null}
@@ -109,7 +113,7 @@ export function AssistantMessageCard({
               <Link
                 href={
                   caseId
-                    ? `/treatment-plan?case=${encodeURIComponent(caseId)}`
+                    ? `/treatment-plan/${encodeURIComponent(caseId)}`
                     : "/treatment-plan"
                 }
                 className={cn(

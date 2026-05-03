@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, reportOutbreakSignal, sendChatMessage } from "@/lib/api";
 import {
   isAutoCaseLabel,
@@ -15,6 +15,7 @@ import {
   ChatComposer,
   type PendingChatImage,
 } from "@/components/chat/ChatComposer";
+import { ChatTypingIndicator } from "@/components/chat/ChatTypingIndicator";
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble";
 import { useCases } from "@/providers/cases-provider";
 
@@ -92,6 +93,8 @@ export function ChatView() {
   const [reportingId, setReportingId] = useState<string | null>(null);
   /** Data URLs for user turns in this session only (not persisted — avoids localStorage quota). */
   const [liveUserImages, setLiveUserImages] = useState<Record<string, string[]>>({});
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const scrollEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setError(null);
@@ -108,6 +111,18 @@ export function ChatView() {
       return { ...m, images: extra };
     });
   }, [activeCaseId, activeThread, liveUserImages]);
+
+  useLayoutEffect(() => {
+    const root = scrollAreaRef.current;
+    const end = scrollEndRef.current;
+    if (!end) return;
+    const nearBottom =
+      !root ||
+      root.scrollHeight - root.scrollTop - root.clientHeight < 120;
+    if (nearBottom || loading) {
+      end.scrollIntoView({ block: "end", behavior: "auto" });
+    }
+  }, [activeCaseId, messages, loading, input]);
 
   const appendTranscript = useCallback((text: string) => {
     setInput((v) => (v ? `${v.trimEnd()} ` : "") + text);
@@ -266,9 +281,12 @@ export function ChatView() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto flex max-w-4xl flex-col gap-6">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        ref={scrollAreaRef}
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-6"
+      >
+        <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-6">
           {messages.length === 0 && !loading ? (
             <p className="text-center text-sm text-neutral-500">
               Describe your animal&apos;s symptoms to get guidance. This is not a
@@ -294,6 +312,8 @@ export function ChatView() {
               />
             ),
           )}
+          {loading ? <ChatTypingIndicator /> : null}
+          <div ref={scrollEndRef} className="h-px w-full shrink-0" aria-hidden />
         </div>
       </div>
 

@@ -42,6 +42,23 @@ export function parseAssistantPayload(content: string): NormalizedChatResponse |
   }
 }
 
+/** Latest medical assistant turn in the thread (for treatment plan page). */
+export function getLatestMedicalFromThread(
+  thread: PersistedChatItem[],
+): NormalizedChatResponse | null {
+  for (let i = thread.length - 1; i >= 0; i -= 1) {
+    const m = thread[i];
+    if (m.role !== "assistant") continue;
+    const data = parseAssistantPayload(m.content);
+    if (data?.responseType === "medical") return data;
+  }
+  return null;
+}
+
+export function threadHasMedicalPlan(thread: PersistedChatItem[]): boolean {
+  return getLatestMedicalFromThread(thread) != null;
+}
+
 /** Short plain-text summary of an assistant turn for the LLM (not raw JSON). */
 export function normalizedToAssistantSummary(data: NormalizedChatResponse): string {
   if (data.responseType === "medical") {

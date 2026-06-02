@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MaweshiAI",
+  title: "LivestockAI",
   description: "AI-assisted guidance for livestock health",
 };
 

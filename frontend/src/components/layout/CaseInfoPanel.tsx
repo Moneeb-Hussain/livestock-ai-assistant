@@ -250,7 +250,7 @@ export function CaseInfoPanel() {
             <section className="mt-auto rounded-xl border border-dashed border-neutral-200 bg-neutral-50/60 px-3 py-3">
               <p className="text-[11px] font-semibold text-neutral-700">Reminder</p>
               <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-600">
-                MaweshiAI gives general guidance only. For diagnosis, prescriptions,
+                LivestockAI gives general guidance only. For diagnosis, prescriptions,
                 or urgent animals, contact a qualified veterinarian.
               </p>
             </section>

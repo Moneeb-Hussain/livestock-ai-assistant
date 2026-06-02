@@ -52,7 +52,7 @@ export function AssistantMessageCard({
         <div className="min-w-0 overflow-hidden rounded-2xl rounded-bl-md border border-neutral-200 bg-white shadow-card">
           <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-3">
             <p className="min-w-0 flex-1 text-sm font-semibold text-neutral-900">
-              MaweshiAI
+              LivestockAI
             </p>
             <span
               className={cn(

@@ -33,7 +33,7 @@ export function Sidebar() {
         <LogoMark className="h-10 w-10 shrink-0" />
         <div>
           <p className="text-lg font-semibold tracking-tight text-brand">
-            MaweshiAI
+            LivestockAI
           </p>
           <p className="text-xs text-neutral-500">Livestock health assistant</p>
         </div>
@@ -107,7 +107,7 @@ export function Sidebar() {
           />
           <div className="min-w-0">
             <p className="truncate text-xs font-medium text-neutral-800">
-              MaweshiAI
+              LivestockAI
             </p>
             <p className="truncate text-[11px] text-neutral-500">Assistant</p>
           </div>

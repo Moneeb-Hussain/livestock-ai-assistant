@@ -267,7 +267,7 @@ export function NearbyVetsView() {
                     Start with your location
                   </p>
                   <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-                    We send coordinates only to your MaweshiAI backend. It queries
+                    We send coordinates only to your LivestockAI backend. It queries
                     OpenStreetMap for nearby veterinary amenities — no Google
                     Maps key required.
                   </p>

@@ -97,7 +97,7 @@ export function ComingSoonDialog({ open, title, onClose }: Props) {
           </div>
 
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand/90">
-            MaweshiAI
+            LivestockAI
           </p>
           <h2
             id="coming-soon-title"
